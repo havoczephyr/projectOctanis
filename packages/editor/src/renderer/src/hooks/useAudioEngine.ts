@@ -1,7 +1,7 @@
 import { useEffect, useRef, useCallback } from 'react'
 import { useTransportStore } from '../store/transportStore'
 import { useProjectStore } from '../store/projectStore'
-import { type OctanisProjectFile, quadBezier } from '@octanis/shared'
+import { type OctanisProjectFile, interpolateFadeRegionGain } from '@octanis/shared'
 
 // Cache for decoded AudioBuffers by audioFileId
 const bufferCache = new Map<string, AudioBuffer>()
@@ -101,18 +101,31 @@ export function useAudioEngine(): { analyser: AnalyserNode | undefined } {
           source.connect(gainNode)
           gainNode.connect(analyserRef.current ?? ctx.destination)
 
-          // Apply fade regions via bezier curve sampling
-          const baseGain = clip.volume * track.volume * masterVolume
+          // Apply fade regions via multi-point interpolation
           for (const region of clip.fadeRegions) {
             const regionDuration = region.endSec - region.startSec
             if (regionDuration <= 0) continue
+
+            // If playback starts mid-region, inject gain at current time
+            const regionClipStart = clip.startSec + region.startSec
+            const regionClipEnd = clip.startSec + region.endSec
+            if (fromSec > regionClipStart && fromSec < regionClipEnd) {
+              const tAtPlayhead = (fromSec - regionClipStart) / regionDuration
+              const regionGainAtPlayhead = interpolateFadeRegionGain(region, tAtPlayhead)
+              gainNode.gain.setValueAtTime(
+                regionGainAtPlayhead * clip.volume * track.volume * masterVolume,
+                ctx.currentTime
+              )
+            }
+
             const steps = Math.max(10, Math.ceil(regionDuration * 50))
             for (let i = 0; i <= steps; i++) {
               const t = i / steps
               const timeSec = region.startSec + t * regionDuration
               const absTime = ctx.currentTime + (clip.startSec + timeSec - fromSec)
               if (absTime < ctx.currentTime) continue
-              const gain = quadBezier(baseGain, region.peakGain * track.volume * masterVolume, baseGain, t)
+              const regionGain = interpolateFadeRegionGain(region, t)
+              const gain = regionGain * clip.volume * track.volume * masterVolume
               gainNode.gain.setValueAtTime(gain, absTime)
             }
           }
@@ -151,6 +164,20 @@ export function useAudioEngine(): { analyser: AnalyserNode | undefined } {
       stopAll()
     }
   }, [transportState, schedulePlayback])
+
+  // Re-schedule when project state changes during playback
+  useEffect(() => {
+    const unsub = useProjectStore.subscribe(
+      (s) => s.projectFile,
+      (projectFile) => {
+        const { state, playheadSec } = useTransportStore.getState()
+        if (state === 'playing') {
+          schedulePlayback(projectFile, playheadSec)
+        }
+      }
+    )
+    return unsub
+  }, [schedulePlayback])
 
   return { analyser: analyserRef.current ?? undefined }
 }

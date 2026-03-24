@@ -17,7 +17,8 @@ interface Props {
 export function ClipView({ track, clip, laneHeight }: Props): React.ReactElement {
   const { timeToPixel } = useTimeToPixel()
   const selectedClipIds = useUiStore((s) => s.selectedClipIds)
-  const selectClip = useUiStore((s) => s.selectClip)
+  const rangeSelection = useUiStore((s) => s.rangeSelection)
+  const openContextMenu = useUiStore((s) => s.openContextMenu)
   const audioFiles = useProjectStore((s) => s.projectFile.audioFiles)
   const audioFile = audioFiles[clip.audioFileId]
 
@@ -26,16 +27,29 @@ export function ClipView({ track, clip, laneHeight }: Props): React.ReactElement
       ? clip.trimEndSec - clip.trimStartSec
       : audioFile?.durationSec ?? 30
 
-  const { onMouseDown, dragOffsetSec, isDragging } = useClipDrag(track.id, clip.id, clip.startSec)
+  const { onMouseDown, dragOffsetSec, isDragging, isRangeSelecting } = useClipDrag(
+    track.id, clip.id, clip.startSec, clipDurationSec
+  )
 
-  const clipX = timeToPixel(clip.startSec + dragOffsetSec)
+  const clipX = timeToPixel(Math.max(0, clip.startSec + dragOffsetSec))
   const clipWidth = Math.max(4, timeToPixel(clipDurationSec))
   const isSelected = selectedClipIds.includes(clip.id)
 
-  function handleMouseDown(e: React.MouseEvent): void {
-    selectClip(clip.id, e.shiftKey)
-    onMouseDown(e)
+  // Range selection highlight for this clip
+  const hasRange = rangeSelection?.clipId === clip.id
+  const rangeLeftPx = hasRange ? timeToPixel(rangeSelection.startSec) : 0
+  const rangeWidthPx = hasRange ? timeToPixel(rangeSelection.endSec - rangeSelection.startSec) : 0
+
+  function handleContextMenu(e: React.MouseEvent): void {
+    e.preventDefault()
+    e.stopPropagation()
+    openContextMenu(e.clientX, e.clientY, clip.id, track.id)
   }
+
+  // Cursor depends on interaction state
+  let cursor = 'default'
+  if (isDragging) cursor = 'grabbing'
+  else if (isRangeSelecting) cursor = 'text'
 
   const className = [
     'clip-block',
@@ -50,10 +64,12 @@ export function ClipView({ track, clip, laneHeight }: Props): React.ReactElement
         {
           left: clipX,
           width: clipWidth,
+          cursor,
           '--track-color': track.color,
         } as React.CSSProperties
       }
-      onMouseDown={handleMouseDown}
+      onMouseDown={onMouseDown}
+      onContextMenu={handleContextMenu}
     >
       {/* Waveform (bottom layer) */}
       <WaveformCanvas
@@ -77,7 +93,7 @@ export function ClipView({ track, clip, laneHeight }: Props): React.ReactElement
         />
       )}
 
-      {/* Fade region overlay (always rendered — handles collapsed/editing mode internally) */}
+      {/* Fade region overlay (only when single-selected) */}
       {isSelected && selectedClipIds.length === 1 && (
         <FadeRegionOverlay
           trackId={track.id}
@@ -88,6 +104,24 @@ export function ClipView({ track, clip, laneHeight }: Props): React.ReactElement
           width={clipWidth}
           height={laneHeight}
           trackColor={track.color}
+        />
+      )}
+
+      {/* Range selection highlight */}
+      {hasRange && rangeWidthPx > 0 && (
+        <div
+          style={{
+            position: 'absolute',
+            left: rangeLeftPx,
+            top: 0,
+            width: rangeWidthPx,
+            height: '100%',
+            background: 'rgba(0, 255, 204, 0.15)',
+            borderLeft: '1px solid rgba(0, 255, 204, 0.5)',
+            borderRight: '1px solid rgba(0, 255, 204, 0.5)',
+            pointerEvents: 'none',
+            zIndex: 5,
+          }}
         />
       )}
 

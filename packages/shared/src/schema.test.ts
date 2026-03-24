@@ -4,11 +4,13 @@ import {
   defaultTrack,
   pickTrackColor,
   interpolateFadeRegions,
+  interpolateFadeRegionGain,
   quadBezier,
   TRACK_COLORS,
   ClipSchema,
   TrackSchema,
   OctanisProjectFileSchema,
+  type FadeRegion,
 } from './schema'
 
 describe('defaultClip', () => {
@@ -76,41 +78,89 @@ describe('quadBezier', () => {
   })
 })
 
+describe('interpolateFadeRegionGain', () => {
+  it('returns startGain at t=0 and endGain at t=1 with no control points', () => {
+    const region: FadeRegion = { id: 'r1', startSec: 0, endSec: 10, startGain: 0.5, endGain: 1.5, controlPoints: [] }
+    expect(interpolateFadeRegionGain(region, 0)).toBeCloseTo(0.5)
+    expect(interpolateFadeRegionGain(region, 1)).toBeCloseTo(1.5)
+  })
+
+  it('interpolates linearly with zero control points', () => {
+    const region: FadeRegion = { id: 'r1', startSec: 0, endSec: 10, startGain: 0, endGain: 2, controlPoints: [] }
+    expect(interpolateFadeRegionGain(region, 0.5)).toBeCloseTo(1.0)
+    expect(interpolateFadeRegionGain(region, 0.25)).toBeCloseTo(0.5)
+  })
+
+  it('passes through a single control point', () => {
+    const region: FadeRegion = {
+      id: 'r1', startSec: 0, endSec: 10, startGain: 1.0, endGain: 1.0,
+      controlPoints: [{ id: 'p1', x: 0.5, gain: 2.0 }],
+    }
+    expect(interpolateFadeRegionGain(region, 0.5)).toBeCloseTo(2.0)
+  })
+
+  it('passes through multiple control points', () => {
+    const region: FadeRegion = {
+      id: 'r1', startSec: 0, endSec: 10, startGain: 1.0, endGain: 1.0,
+      controlPoints: [
+        { id: 'p1', x: 0.25, gain: 0.5 },
+        { id: 'p2', x: 0.75, gain: 1.5 },
+      ],
+    }
+    expect(interpolateFadeRegionGain(region, 0.25)).toBeCloseTo(0.5)
+    expect(interpolateFadeRegionGain(region, 0.75)).toBeCloseTo(1.5)
+  })
+
+  it('handles asymmetric startGain and endGain', () => {
+    const region: FadeRegion = { id: 'r1', startSec: 0, endSec: 10, startGain: 0.2, endGain: 1.8, controlPoints: [] }
+    const mid = interpolateFadeRegionGain(region, 0.5)
+    expect(mid).toBeCloseTo(1.0)
+  })
+
+  it('clamps to boundary values for t outside [0, 1]', () => {
+    const region: FadeRegion = { id: 'r1', startSec: 0, endSec: 10, startGain: 0.5, endGain: 1.5, controlPoints: [] }
+    expect(interpolateFadeRegionGain(region, -0.1)).toBeCloseTo(0.5)
+    expect(interpolateFadeRegionGain(region, 1.1)).toBeCloseTo(1.5)
+  })
+})
+
 describe('interpolateFadeRegions', () => {
   it('returns clipVolume when no regions exist', () => {
     expect(interpolateFadeRegions([], 5, 1.0)).toBe(1.0)
   })
 
   it('returns clipVolume when time is outside all regions', () => {
-    const regions = [{ id: 'r1', startSec: 2, endSec: 4, peakGain: 0.5, controlPointX: 0.5 }]
+    const regions: FadeRegion[] = [{ id: 'r1', startSec: 2, endSec: 4, startGain: 0.5, endGain: 0.5, controlPoints: [] }]
     expect(interpolateFadeRegions(regions, 0, 1.0)).toBe(1.0)
     expect(interpolateFadeRegions(regions, 5, 1.0)).toBe(1.0)
   })
 
-  it('returns bezier value inside a region', () => {
-    const regions = [{ id: 'r1', startSec: 0, endSec: 10, peakGain: 2.0, controlPointX: 0.5 }]
+  it('returns interpolated value inside a region', () => {
+    const regions: FadeRegion[] = [{
+      id: 'r1', startSec: 0, endSec: 10, startGain: 1.0, endGain: 1.0,
+      controlPoints: [{ id: 'p1', x: 0.5, gain: 2.0 }],
+    }]
     const mid = interpolateFadeRegions(regions, 5, 1.0)
-    // At t=0.5: quadBezier(1.0, 2.0, 1.0, 0.5) = 1.5
-    expect(mid).toBeCloseTo(1.5)
+    expect(mid).toBeCloseTo(2.0)
   })
 
-  it('returns clipVolume at region edges', () => {
-    const regions = [{ id: 'r1', startSec: 2, endSec: 4, peakGain: 0, controlPointX: 0.5 }]
-    // At t=0 (start): quadBezier(1.0, 0, 1.0, 0) = 1.0
-    expect(interpolateFadeRegions(regions, 2, 1.0)).toBeCloseTo(1.0)
-    // At t=1 (end): quadBezier(1.0, 0, 1.0, 1) = 1.0
-    expect(interpolateFadeRegions(regions, 4, 1.0)).toBeCloseTo(1.0)
+  it('returns region edge gains at region boundaries', () => {
+    const regions: FadeRegion[] = [{ id: 'r1', startSec: 2, endSec: 4, startGain: 0.8, endGain: 1.2, controlPoints: [] }]
+    expect(interpolateFadeRegions(regions, 2, 1.0)).toBeCloseTo(0.8)
+    expect(interpolateFadeRegions(regions, 4, 1.0)).toBeCloseTo(1.2)
   })
 
   it('handles zero-duration region gracefully', () => {
-    const regions = [{ id: 'r1', startSec: 3, endSec: 3, peakGain: 0.5, controlPointX: 0.5 }]
+    const regions: FadeRegion[] = [{ id: 'r1', startSec: 3, endSec: 3, startGain: 0.5, endGain: 0.5, controlPoints: [] }]
     expect(interpolateFadeRegions(regions, 3, 1.0)).toBe(1.0)
   })
 
-  it('respects clipVolume parameter', () => {
-    const regions = [{ id: 'r1', startSec: 0, endSec: 10, peakGain: 1.0, controlPointX: 0.5 }]
-    // clipVolume=0.8, peakGain=1.0, at t=0.5: quadBezier(0.8, 1.0, 0.8, 0.5) = 0.9
-    expect(interpolateFadeRegions(regions, 5, 0.8)).toBeCloseTo(0.9)
+  it('uses region gains not clipVolume for interpolation', () => {
+    const regions: FadeRegion[] = [{
+      id: 'r1', startSec: 0, endSec: 10, startGain: 0.5, endGain: 1.5, controlPoints: [],
+    }]
+    // Linear from 0.5 to 1.5, at midpoint = 1.0
+    expect(interpolateFadeRegions(regions, 5, 0.8)).toBeCloseTo(1.0)
   })
 })
 

@@ -32,13 +32,12 @@ describe('uiStore', () => {
   })
 
   describe('deselectAll', () => {
-    it('clears all selected clips and fade region edit mode', () => {
+    it('clears all selected clips and fade gain editor', () => {
       useUiStore.getState().selectClip('clip-1', false)
-      useUiStore.getState().enterFadeRegionEditMode('clip-1', 'r1')
+      useUiStore.getState().openFadeGainEditor('t1', 'clip-1', 'r1')
       useUiStore.getState().deselectAll()
       expect(useUiStore.getState().selectedClipIds).toEqual([])
-      expect(useUiStore.getState().editingFadeRegionClipId).toBeNull()
-      expect(useUiStore.getState().editingFadeRegionId).toBeNull()
+      expect(useUiStore.getState().fadeGainEditor).toBeNull()
     })
   })
 
@@ -70,24 +69,81 @@ describe('uiStore', () => {
     })
   })
 
-  describe('fadeRegionEditMode', () => {
-    it('enters edit mode with clipId and optional regionId', () => {
-      useUiStore.getState().enterFadeRegionEditMode('clip-1', 'r1')
-      expect(useUiStore.getState().editingFadeRegionClipId).toBe('clip-1')
-      expect(useUiStore.getState().editingFadeRegionId).toBe('r1')
+  describe('rangeSelection', () => {
+    it('sets and clears range selection', () => {
+      const sel = { clipId: 'c1', trackId: 't1', startSec: 1, endSec: 3 }
+      useUiStore.getState().setRangeSelection(sel)
+      expect(useUiStore.getState().rangeSelection).toEqual(sel)
+
+      useUiStore.getState().clearRangeSelection()
+      expect(useUiStore.getState().rangeSelection).toBeNull()
     })
 
-    it('enters edit mode without regionId', () => {
-      useUiStore.getState().enterFadeRegionEditMode('clip-1')
-      expect(useUiStore.getState().editingFadeRegionClipId).toBe('clip-1')
-      expect(useUiStore.getState().editingFadeRegionId).toBeNull()
+    it('is cleared by deselectAll', () => {
+      useUiStore.getState().setRangeSelection({ clipId: 'c1', trackId: 't1', startSec: 0, endSec: 2 })
+      useUiStore.getState().deselectAll()
+      expect(useUiStore.getState().rangeSelection).toBeNull()
+    })
+  })
+
+  describe('contextMenu', () => {
+    it('opens and closes context menu', () => {
+      useUiStore.getState().openContextMenu(100, 200, 'c1', 't1')
+      expect(useUiStore.getState().contextMenu).toEqual({ x: 100, y: 200, clipId: 'c1', trackId: 't1' })
+
+      useUiStore.getState().closeContextMenu()
+      expect(useUiStore.getState().contextMenu).toBeNull()
     })
 
-    it('exits edit mode', () => {
-      useUiStore.getState().enterFadeRegionEditMode('clip-1', 'r1')
-      useUiStore.getState().exitFadeRegionEditMode()
-      expect(useUiStore.getState().editingFadeRegionClipId).toBeNull()
-      expect(useUiStore.getState().editingFadeRegionId).toBeNull()
+    it('is cleared by deselectAll', () => {
+      useUiStore.getState().openContextMenu(50, 50, 'c1', 't1')
+      useUiStore.getState().deselectAll()
+      expect(useUiStore.getState().contextMenu).toBeNull()
+    })
+  })
+
+  describe('fadeGainEditor', () => {
+    it('opens with track, clip, and region context', () => {
+      useUiStore.getState().openFadeGainEditor('t1', 'clip-1', 'r1')
+      expect(useUiStore.getState().fadeGainEditor).toEqual({ trackId: 't1', clipId: 'clip-1', regionId: 'r1' })
+    })
+
+    it('closes the editor', () => {
+      useUiStore.getState().openFadeGainEditor('t1', 'clip-1', 'r1')
+      useUiStore.getState().closeFadeGainEditor()
+      expect(useUiStore.getState().fadeGainEditor).toBeNull()
+    })
+
+    it('is cleared by deselectAll', () => {
+      useUiStore.getState().openFadeGainEditor('t1', 'clip-1', 'r1')
+      useUiStore.getState().deselectAll()
+      expect(useUiStore.getState().fadeGainEditor).toBeNull()
+    })
+  })
+
+  describe('uiIntensity', () => {
+    it('defaults to balanced', () => {
+      expect(useUiStore.getState().uiIntensity).toBe('balanced')
+    })
+
+    it('setUiIntensity sets directly', () => {
+      useUiStore.getState().setUiIntensity('low')
+      expect(useUiStore.getState().uiIntensity).toBe('low')
+
+      useUiStore.getState().setUiIntensity('high')
+      expect(useUiStore.getState().uiIntensity).toBe('high')
+    })
+
+    it('cycleUiIntensity cycles high → balanced → low → high', () => {
+      useUiStore.getState().setUiIntensity('high')
+      useUiStore.getState().cycleUiIntensity()
+      expect(useUiStore.getState().uiIntensity).toBe('balanced')
+
+      useUiStore.getState().cycleUiIntensity()
+      expect(useUiStore.getState().uiIntensity).toBe('low')
+
+      useUiStore.getState().cycleUiIntensity()
+      expect(useUiStore.getState().uiIntensity).toBe('high')
     })
   })
 })

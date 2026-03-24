@@ -67,6 +67,12 @@ function createWindow(): void {
           click: () => mainWindow?.webContents.send('menu:file-save-as'),
         },
         { type: 'separator' },
+        {
+          label: 'Close Project',
+          accelerator: 'CmdOrCtrl+W',
+          click: () => mainWindow?.webContents.send('menu:file-close'),
+        },
+        { type: 'separator' },
         isMac ? { role: 'close' } : { role: 'quit' },
       ],
     },

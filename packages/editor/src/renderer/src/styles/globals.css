@@ -64,3 +64,14 @@ body::after {
 ::selection {
   background: rgba(0, 255, 204, 0.25);
 }
+
+/* ─── UI Intensity: disable scanline at balanced/low ─────────────────────── */
+html[data-ui-intensity="balanced"] body::after,
+html[data-ui-intensity="low"] body::after {
+  content: none;
+}
+
+/* ─── GPU compositing hints ──────────────────────────────────────────────── */
+canvas {
+  contain: strict;
+}

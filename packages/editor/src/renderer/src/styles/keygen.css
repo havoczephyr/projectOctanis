@@ -165,3 +165,43 @@
 .clip-block:active {
   cursor: grabbing;
 }
+
+/* ─── UI Intensity Overrides ─────────────────────────────────────────────── */
+
+/* Balanced: reduce panel blur */
+:root[data-ui-intensity="balanced"] .panel {
+  backdrop-filter: blur(8px) saturate(1.4);
+  -webkit-backdrop-filter: blur(8px) saturate(1.4);
+}
+
+/* Low: no backdrop-filter, solid backgrounds */
+:root[data-ui-intensity="low"] .panel {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  background: rgba(10, 18, 35, 0.92);
+}
+
+/* Disable border-pulse animation */
+:root[data-ui-intensity="balanced"] .pulse-border,
+:root[data-ui-intensity="low"] .pulse-border {
+  animation: none;
+}
+
+/* Remove glow text shadows at low */
+:root[data-ui-intensity="low"] .glow-text,
+:root[data-ui-intensity="low"] .glow-text--green,
+:root[data-ui-intensity="low"] .glow-text--magenta {
+  text-shadow: none;
+}
+
+/* Simplify clip-block shadows at low */
+:root[data-ui-intensity="low"] .clip-block,
+:root[data-ui-intensity="low"] .clip-block:hover,
+:root[data-ui-intensity="low"] .clip-block--selected {
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+}
+
+/* Remove track-color-strip glow at low */
+:root[data-ui-intensity="low"] .track-color-strip {
+  box-shadow: none;
+}

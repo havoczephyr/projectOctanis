@@ -57,3 +57,23 @@
 .line--playing {
   animation: playhead-pulse 0.9s ease-in-out infinite;
 }
+
+/* ─── UI Intensity Overrides ─────────────────────────────────────────────── */
+:root[data-ui-intensity="balanced"] .line--playing {
+  animation: none;
+  box-shadow: 0 0 6px var(--playhead);
+}
+:root[data-ui-intensity="balanced"] .handle--playing {
+  animation: none;
+}
+
+:root[data-ui-intensity="low"] .line--playing,
+:root[data-ui-intensity="low"] .line {
+  animation: none;
+  box-shadow: none;
+}
+:root[data-ui-intensity="low"] .handle--playing,
+:root[data-ui-intensity="low"] .handle {
+  animation: none;
+  box-shadow: none;
+}

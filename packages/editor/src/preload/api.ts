@@ -4,11 +4,19 @@ import type { PeakOpts, PeaksResult, FileEntry } from '../ipcTypes'
 
 export const octanisApi = {
   file: {
-    open: (): Promise<OctanisProjectFile | null> => ipcRenderer.invoke('file:open'),
+    open: (): Promise<{ projectFile: OctanisProjectFile; filePath: string } | null> =>
+      ipcRenderer.invoke('file:open'),
     save: (project: OctanisProjectFile, filePath?: string): Promise<string | null> =>
       ipcRenderer.invoke('file:save', project, filePath),
     importAudio: (): Promise<string[] | null> => ipcRenderer.invoke('file:importAudio'),
     openFolder: (): Promise<string | null> => ipcRenderer.invoke('file:openFolder'),
+    createProject: (
+      folderPath: string,
+      title: string
+    ): Promise<{ projectFile: OctanisProjectFile; filePath: string }> =>
+      ipcRenderer.invoke('file:createProject', folderPath, title),
+    openByPath: (filePath: string): Promise<OctanisProjectFile | null> =>
+      ipcRenderer.invoke('file:openByPath', filePath),
   },
   ffmpeg: {
     extractPeaks: (audioPath: string, opts: PeakOpts): Promise<PeaksResult> =>
@@ -21,6 +29,8 @@ export const octanisApi = {
       ipcRenderer.invoke('fs:readdir', dirPath),
     readAudioFile: (filePath: string): Promise<ArrayBuffer> =>
       ipcRenderer.invoke('fs:readAudioFile', filePath),
+    copyFile: (source: string, dest: string): Promise<string> =>
+      ipcRenderer.invoke('fs:copyFile', source, dest),
   },
   menu: {
     onUndo: (cb: () => void): (() => void) => {
@@ -52,6 +62,11 @@ export const octanisApi = {
       const handler = (): void => cb()
       ipcRenderer.on('menu:file-save-as', handler)
       return () => { ipcRenderer.removeListener('menu:file-save-as', handler) }
+    },
+    onFileClose: (cb: () => void): (() => void) => {
+      const handler = (): void => cb()
+      ipcRenderer.on('menu:file-close', handler)
+      return () => { ipcRenderer.removeListener('menu:file-close', handler) }
     },
   },
 }

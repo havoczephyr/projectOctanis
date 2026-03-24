@@ -5,6 +5,7 @@ import { useUiStore } from '../store/uiStore'
 export function UndoHistoryPanel(): React.ReactElement | null {
   const show = useUiStore((s) => s.showUndoHistoryPanel)
   const setShow = useUiStore((s) => s.setShowUndoHistoryPanel)
+  const uiIntensity = useUiStore((s) => s.uiIntensity)
 
   const temporalState = useProjectStore.temporal.getState()
   const pastCount = temporalState.pastStates.length
@@ -50,7 +51,7 @@ export function UndoHistoryPanel(): React.ReactElement | null {
         fontFamily: 'monospace',
         fontSize: 11,
         color: '#ccc',
-        backdropFilter: 'blur(12px)',
+        backdropFilter: uiIntensity === 'high' ? 'blur(12px)' : uiIntensity === 'balanced' ? 'blur(6px)' : 'none',
       }}
     >
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>

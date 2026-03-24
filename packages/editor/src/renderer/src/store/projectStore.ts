@@ -9,6 +9,7 @@ import {
   type Track,
   type Clip,
   type FadeRegion,
+  type GainControlPoint,
   type LoopRegion,
   type AudioFile,
   defaultClip,
@@ -36,9 +37,11 @@ interface ProjectState {
   projectFile: OctanisProjectFile
   currentFilePath: string | null
   isDirty: boolean
+  isProjectOpen: boolean
 
   // Project-level
   setProject: (projectFile: OctanisProjectFile, filePath?: string) => void
+  closeProject: () => void
   setFilePath: (path: string) => void
   markClean: () => void
   updateProjectMeta: (meta: Partial<OctanisProject['meta']>) => void
@@ -67,6 +70,11 @@ interface ProjectState {
   updateFadeRegion: (trackId: string, clipId: string, regionId: string, patch: Partial<Omit<FadeRegion, 'id'>>) => void
   removeFadeRegion: (trackId: string, clipId: string, regionId: string) => void
 
+  // Control points within fade regions
+  addControlPoint: (trackId: string, clipId: string, regionId: string, point: GainControlPoint) => void
+  updateControlPoint: (trackId: string, clipId: string, regionId: string, pointId: string, patch: Partial<Omit<GainControlPoint, 'id'>>) => void
+  removeControlPoint: (trackId: string, clipId: string, regionId: string, pointId: string) => void
+
   // Loop
   setLoop: (trackId: string, clipId: string, loop: LoopRegion | null) => void
 }
@@ -78,12 +86,22 @@ export const useProjectStore = create<ProjectState>()(
       projectFile: newProject(),
       currentFilePath: null,
       isDirty: false,
+      isProjectOpen: false,
 
       setProject: (projectFile, filePath) =>
         set((state) => {
           state.projectFile = projectFile
           state.currentFilePath = filePath ?? null
           state.isDirty = false
+          state.isProjectOpen = true
+        }),
+
+      closeProject: () =>
+        set((state) => {
+          state.projectFile = newProject()
+          state.currentFilePath = null
+          state.isDirty = false
+          state.isProjectOpen = false
         }),
 
       setFilePath: (path) =>
@@ -262,6 +280,45 @@ export const useProjectStore = create<ProjectState>()(
           if (!clip) return
           const idx = clip.fadeRegions.findIndex((r) => r.id === regionId)
           if (idx !== -1) clip.fadeRegions.splice(idx, 1)
+          state.isDirty = true
+        }),
+
+      addControlPoint: (trackId, clipId, regionId, point) =>
+        set((state) => {
+          const track = state.projectFile.project.tracks.find((t) => t.id === trackId)
+          const clip = track?.clips.find((c) => c.id === clipId)
+          if (!clip) return
+          const region = clip.fadeRegions.find((r) => r.id === regionId)
+          if (!region) return
+          region.controlPoints.push(point)
+          region.controlPoints.sort((a, b) => a.x - b.x)
+          state.isDirty = true
+        }),
+
+      updateControlPoint: (trackId, clipId, regionId, pointId, patch) =>
+        set((state) => {
+          const track = state.projectFile.project.tracks.find((t) => t.id === trackId)
+          const clip = track?.clips.find((c) => c.id === clipId)
+          if (!clip) return
+          const region = clip.fadeRegions.find((r) => r.id === regionId)
+          if (!region) return
+          const point = region.controlPoints.find((p) => p.id === pointId)
+          if (point) {
+            Object.assign(point, patch)
+            region.controlPoints.sort((a, b) => a.x - b.x)
+            state.isDirty = true
+          }
+        }),
+
+      removeControlPoint: (trackId, clipId, regionId, pointId) =>
+        set((state) => {
+          const track = state.projectFile.project.tracks.find((t) => t.id === trackId)
+          const clip = track?.clips.find((c) => c.id === clipId)
+          if (!clip) return
+          const region = clip.fadeRegions.find((r) => r.id === regionId)
+          if (!region) return
+          const idx = region.controlPoints.findIndex((p) => p.id === pointId)
+          if (idx !== -1) region.controlPoints.splice(idx, 1)
           state.isDirty = true
         }),
 

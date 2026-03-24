@@ -1,6 +1,8 @@
 import React from 'react'
 import { FileBrowser } from '../fileBrowser/FileBrowser'
 import { useUiStore } from '../../store/uiStore'
+import { useProjectStore } from '../../store/projectStore'
+import { copyAudioToProject } from '../../utils/copyAudioToProject'
 import styles from './Sidebar.module.css'
 
 export function Sidebar(): React.ReactElement {
@@ -12,13 +14,36 @@ export function Sidebar(): React.ReactElement {
     if (path) setSidebarFolder(path)
   }
 
+  async function handleImportAudio(): Promise<void> {
+    const files = await window.octanis.file.importAudio()
+    if (!files) return
+    const currentFilePath = useProjectStore.getState().currentFilePath
+    for (const sourcePath of files) {
+      const localPath = currentFilePath
+        ? await copyAudioToProject(sourcePath, currentFilePath)
+        : sourcePath
+      const audioFile = await window.octanis.ffmpeg.inspectAudio(localPath)
+      useProjectStore.getState().addAudioFile(audioFile)
+    }
+    // Auto-set sidebar to project's audio folder
+    if (currentFilePath) {
+      const projectFolder = currentFilePath.substring(0, currentFilePath.lastIndexOf('/'))
+      setSidebarFolder(`${projectFolder}/audio`)
+    }
+  }
+
   return (
     <div className={`${styles.sidebar} panel`}>
       <div className={styles.header}>
         <span className={styles.title}>FILES</span>
-        <button className="btn btn--icon" onClick={handleOpenFolder} title="Open folder">
-          ⊞
-        </button>
+        <div style={{ display: 'flex', gap: 4 }}>
+          <button className="btn btn--icon" onClick={handleImportAudio} title="Import audio files">
+            +
+          </button>
+          <button className="btn btn--icon" onClick={handleOpenFolder} title="Open folder">
+            ⊞
+          </button>
+        </div>
       </div>
 
       {folder ? (

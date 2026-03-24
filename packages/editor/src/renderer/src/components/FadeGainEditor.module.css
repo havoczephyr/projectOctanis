@@ -1,0 +1,119 @@
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 9998;
+  background: rgba(0, 0, 0, 0.5);
+}
+
+.panel {
+  position: fixed;
+  z-index: 9999;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 640px;
+  height: 380px;
+  display: flex;
+  flex-direction: column;
+  background: rgba(20, 20, 30, 0.96);
+  backdrop-filter: blur(22px);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-panel);
+  font-family: var(--font-mono);
+  color: var(--text-primary);
+  overflow: hidden;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border-subtle);
+  font-size: 11px;
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+
+.headerTitle {
+  font-size: 11px;
+  color: var(--text-accent);
+}
+
+.closeBtn {
+  background: none;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  padding: 2px 8px;
+  cursor: pointer;
+  transition: color var(--transition-fast), border-color var(--transition-fast);
+}
+
+.closeBtn:hover {
+  color: var(--text-primary);
+  border-color: var(--border);
+}
+
+.canvasContainer {
+  position: relative;
+  flex: 1;
+  cursor: crosshair;
+  overflow: hidden;
+}
+
+.waveformCanvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+}
+
+.svgLayer {
+  position: absolute;
+  top: 0;
+  left: 0;
+}
+
+.anchor {
+  cursor: ns-resize;
+}
+
+.anchor:hover rect,
+.anchor:hover polygon {
+  stroke-width: 2;
+}
+
+.controlPoint {
+  cursor: grab;
+}
+
+.controlPoint:active {
+  cursor: grabbing;
+}
+
+.controlPoint:hover circle {
+  r: 7;
+}
+
+.footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  border-top: 1px solid var(--border-subtle);
+  font-size: 10px;
+  color: var(--text-dim);
+  flex-shrink: 0;
+}
+
+/* ─── UI Intensity Overrides ─────────────────────────────────────────────── */
+:root[data-ui-intensity="balanced"] .panel {
+  backdrop-filter: blur(8px);
+}
+:root[data-ui-intensity="low"] .panel {
+  backdrop-filter: none;
+  background: rgba(20, 20, 30, 0.98);
+}

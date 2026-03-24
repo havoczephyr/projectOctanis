@@ -111,10 +111,10 @@ describe('projectStore', () => {
       const clipId = useProjectStore.getState().addClip(trackId, 'audio-1', 0)
 
       useProjectStore.getState().addFadeRegion(trackId, clipId, {
-        id: 'r2', startSec: 5, endSec: 8, peakGain: 0.5, controlPointX: 0.5,
+        id: 'r2', startSec: 5, endSec: 8, startGain: 1.0, endGain: 1.0, controlPoints: [],
       })
       useProjectStore.getState().addFadeRegion(trackId, clipId, {
-        id: 'r1', startSec: 1, endSec: 3, peakGain: 1.5, controlPointX: 0.5,
+        id: 'r1', startSec: 1, endSec: 3, startGain: 1.0, endGain: 1.0, controlPoints: [],
       })
 
       const regions = useProjectStore.getState().projectFile.project.tracks[0].clips[0].fadeRegions
@@ -128,10 +128,10 @@ describe('projectStore', () => {
       const clipId = useProjectStore.getState().addClip(trackId, 'audio-1', 0)
 
       useProjectStore.getState().addFadeRegion(trackId, clipId, {
-        id: 'r1', startSec: 2, endSec: 6, peakGain: 0.5, controlPointX: 0.5,
+        id: 'r1', startSec: 2, endSec: 6, startGain: 1.0, endGain: 1.0, controlPoints: [],
       })
       useProjectStore.getState().addFadeRegion(trackId, clipId, {
-        id: 'r2', startSec: 4, endSec: 8, peakGain: 1.0, controlPointX: 0.5,
+        id: 'r2', startSec: 4, endSec: 8, startGain: 1.0, endGain: 1.0, controlPoints: [],
       })
 
       const regions = useProjectStore.getState().projectFile.project.tracks[0].clips[0].fadeRegions
@@ -141,17 +141,18 @@ describe('projectStore', () => {
   })
 
   describe('updateFadeRegion', () => {
-    it('updates peakGain of a fade region', () => {
+    it('updates anchor gains of a fade region', () => {
       const trackId = useProjectStore.getState().addTrack()
       const clipId = useProjectStore.getState().addClip(trackId, 'audio-1', 0)
       useProjectStore.getState().addFadeRegion(trackId, clipId, {
-        id: 'r1', startSec: 1, endSec: 5, peakGain: 0.5, controlPointX: 0.5,
+        id: 'r1', startSec: 1, endSec: 5, startGain: 1.0, endGain: 1.0, controlPoints: [],
       })
 
-      useProjectStore.getState().updateFadeRegion(trackId, clipId, 'r1', { peakGain: 1.8 })
+      useProjectStore.getState().updateFadeRegion(trackId, clipId, 'r1', { startGain: 0.5, endGain: 1.8 })
 
       const region = useProjectStore.getState().projectFile.project.tracks[0].clips[0].fadeRegions[0]
-      expect(region.peakGain).toBe(1.8)
+      expect(region.startGain).toBe(0.5)
+      expect(region.endGain).toBe(1.8)
     })
   })
 
@@ -160,13 +161,114 @@ describe('projectStore', () => {
       const trackId = useProjectStore.getState().addTrack()
       const clipId = useProjectStore.getState().addClip(trackId, 'audio-1', 0)
       useProjectStore.getState().addFadeRegion(trackId, clipId, {
-        id: 'r1', startSec: 1, endSec: 5, peakGain: 0.5, controlPointX: 0.5,
+        id: 'r1', startSec: 1, endSec: 5, startGain: 1.0, endGain: 1.0, controlPoints: [],
       })
 
       useProjectStore.getState().removeFadeRegion(trackId, clipId, 'r1')
 
       const regions = useProjectStore.getState().projectFile.project.tracks[0].clips[0].fadeRegions
       expect(regions).toHaveLength(0)
+    })
+  })
+
+  describe('addControlPoint', () => {
+    it('adds a control point sorted by x', () => {
+      const trackId = useProjectStore.getState().addTrack()
+      const clipId = useProjectStore.getState().addClip(trackId, 'audio-1', 0)
+      useProjectStore.getState().addFadeRegion(trackId, clipId, {
+        id: 'r1', startSec: 0, endSec: 10, startGain: 1.0, endGain: 1.0, controlPoints: [],
+      })
+
+      useProjectStore.getState().addControlPoint(trackId, clipId, 'r1', { id: 'p2', x: 0.7, gain: 1.5 })
+      useProjectStore.getState().addControlPoint(trackId, clipId, 'r1', { id: 'p1', x: 0.3, gain: 0.5 })
+
+      const points = useProjectStore.getState().projectFile.project.tracks[0].clips[0].fadeRegions[0].controlPoints
+      expect(points).toHaveLength(2)
+      expect(points[0].id).toBe('p1')
+      expect(points[1].id).toBe('p2')
+    })
+  })
+
+  describe('updateControlPoint', () => {
+    it('updates a control point and re-sorts', () => {
+      const trackId = useProjectStore.getState().addTrack()
+      const clipId = useProjectStore.getState().addClip(trackId, 'audio-1', 0)
+      useProjectStore.getState().addFadeRegion(trackId, clipId, {
+        id: 'r1', startSec: 0, endSec: 10, startGain: 1.0, endGain: 1.0,
+        controlPoints: [{ id: 'p1', x: 0.3, gain: 0.5 }, { id: 'p2', x: 0.7, gain: 1.5 }],
+      })
+
+      useProjectStore.getState().updateControlPoint(trackId, clipId, 'r1', 'p1', { x: 0.9, gain: 0.8 })
+
+      const points = useProjectStore.getState().projectFile.project.tracks[0].clips[0].fadeRegions[0].controlPoints
+      expect(points[0].id).toBe('p2') // p2 at 0.7 is now first
+      expect(points[1].id).toBe('p1') // p1 moved to 0.9
+      expect(points[1].gain).toBe(0.8)
+    })
+  })
+
+  describe('removeControlPoint', () => {
+    it('removes a control point by id', () => {
+      const trackId = useProjectStore.getState().addTrack()
+      const clipId = useProjectStore.getState().addClip(trackId, 'audio-1', 0)
+      useProjectStore.getState().addFadeRegion(trackId, clipId, {
+        id: 'r1', startSec: 0, endSec: 10, startGain: 1.0, endGain: 1.0,
+        controlPoints: [{ id: 'p1', x: 0.5, gain: 1.5 }],
+      })
+
+      useProjectStore.getState().removeControlPoint(trackId, clipId, 'r1', 'p1')
+
+      const points = useProjectStore.getState().projectFile.project.tracks[0].clips[0].fadeRegions[0].controlPoints
+      expect(points).toHaveLength(0)
+    })
+  })
+
+  describe('isProjectOpen', () => {
+    it('defaults to false', () => {
+      expect(useProjectStore.getState().isProjectOpen).toBe(false)
+    })
+
+    it('is set to true by setProject', () => {
+      const now = new Date().toISOString()
+      useProjectStore.getState().setProject({
+        project: {
+          version: '1.0',
+          meta: { title: 'Test', author: '', createdAt: now, updatedAt: now },
+          bpm: 120,
+          timeSignature: [4, 4],
+          durationSec: 120,
+          masterVolume: 1.0,
+          tracks: [],
+        },
+        audioFiles: {},
+      }, '/test/path.octanis.json')
+      expect(useProjectStore.getState().isProjectOpen).toBe(true)
+      expect(useProjectStore.getState().currentFilePath).toBe('/test/path.octanis.json')
+    })
+  })
+
+  describe('closeProject', () => {
+    it('resets to initial state with isProjectOpen false', () => {
+      const now = new Date().toISOString()
+      useProjectStore.getState().setProject({
+        project: {
+          version: '1.0',
+          meta: { title: 'Test', author: '', createdAt: now, updatedAt: now },
+          bpm: 120,
+          timeSignature: [4, 4],
+          durationSec: 120,
+          masterVolume: 1.0,
+          tracks: [],
+        },
+        audioFiles: {},
+      }, '/test/path.octanis.json')
+      expect(useProjectStore.getState().isProjectOpen).toBe(true)
+
+      useProjectStore.getState().closeProject()
+      expect(useProjectStore.getState().isProjectOpen).toBe(false)
+      expect(useProjectStore.getState().currentFilePath).toBeNull()
+      expect(useProjectStore.getState().isDirty).toBe(false)
+      expect(useProjectStore.getState().projectFile.project.meta.title).toBe('Untitled Project')
     })
   })
 })

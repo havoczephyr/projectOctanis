@@ -15,3 +15,13 @@
   filter: blur(0.4px);
   flex-shrink: 0;
 }
+
+/* ─── UI Intensity Overrides ─────────────────────────────────────────────── */
+:root[data-ui-intensity="balanced"] .bar {
+  filter: none;
+  box-shadow: 0 0 3px currentColor;
+}
+:root[data-ui-intensity="low"] .bar {
+  filter: none;
+  box-shadow: none;
+}

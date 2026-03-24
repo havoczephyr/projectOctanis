@@ -12,10 +12,12 @@ export function AppShell(): React.ReactElement {
   const open = useProjectStore((s) => s.setProject)
   const theme = useUiStore((s) => s.theme)
   const toggleTheme = useUiStore((s) => s.toggleTheme)
+  const uiIntensity = useUiStore((s) => s.uiIntensity)
+  const cycleUiIntensity = useUiStore((s) => s.cycleUiIntensity)
 
   async function handleOpen(): Promise<void> {
-    const projectFile = await window.octanis.file.open()
-    if (projectFile) open(projectFile)
+    const result = await window.octanis.file.open()
+    if (result) open(result.projectFile, result.filePath)
   }
 
   async function handleSave(): Promise<void> {
@@ -39,6 +41,9 @@ export function AppShell(): React.ReactElement {
           <span className="glow-text">{title}{isDirty ? ' ●' : ''}</span>
         </div>
         <div className={styles.titleBarRight}>
+          <button className="btn btn--icon" onClick={cycleUiIntensity} title={`UI intensity: ${uiIntensity}`}>
+            {uiIntensity === 'high' ? 'H' : uiIntensity === 'balanced' ? 'B' : 'L'}
+          </button>
           <button className="btn btn--icon" onClick={toggleTheme} title="Toggle theme">
             {theme === 'dark' ? '☀' : '◐'}
           </button>

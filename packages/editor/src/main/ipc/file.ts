@@ -1,37 +1,41 @@
 import { ipcMain, dialog, BrowserWindow } from 'electron'
 import { readFile, writeFile } from 'fs/promises'
+import { join } from 'path'
 import { OctanisProjectFileSchema, type OctanisProjectFile } from '@octanis/shared'
 import log from 'electron-log'
 
 export function registerFileHandlers(): void {
-  ipcMain.handle('file:open', async (): Promise<OctanisProjectFile | null> => {
-    const win = BrowserWindow.getFocusedWindow()
-    const result = await dialog.showOpenDialog(win!, {
-      title: 'Open Octanis Project',
-      filters: [
-        { name: 'Octanis Project', extensions: ['octanis.json', 'json'] },
-        { name: 'All Files', extensions: ['*'] },
-      ],
-      properties: ['openFile'],
-    })
+  ipcMain.handle(
+    'file:open',
+    async (): Promise<{ projectFile: OctanisProjectFile; filePath: string } | null> => {
+      const win = BrowserWindow.getFocusedWindow()
+      const result = await dialog.showOpenDialog(win!, {
+        title: 'Open Octanis Project',
+        filters: [
+          { name: 'Octanis Project', extensions: ['octanis.json', 'json'] },
+          { name: 'All Files', extensions: ['*'] },
+        ],
+        properties: ['openFile'],
+      })
 
-    if (result.canceled || result.filePaths.length === 0) return null
+      if (result.canceled || result.filePaths.length === 0) return null
 
-    const filePath = result.filePaths[0]
-    try {
-      const raw = await readFile(filePath, 'utf-8')
-      const parsed = JSON.parse(raw)
-      const validated = OctanisProjectFileSchema.parse(parsed)
-      return validated
-    } catch (err) {
-      log.error('file:open parse error', err)
-      dialog.showErrorBox(
-        'Invalid Project File',
-        `Could not load the project file.\n\n${err instanceof Error ? err.message : String(err)}`
-      )
-      return null
+      const filePath = result.filePaths[0]
+      try {
+        const raw = await readFile(filePath, 'utf-8')
+        const parsed = JSON.parse(raw)
+        const projectFile = OctanisProjectFileSchema.parse(parsed)
+        return { projectFile, filePath }
+      } catch (err) {
+        log.error('file:open parse error', err)
+        dialog.showErrorBox(
+          'Invalid Project File',
+          `Could not load the project file.\n\n${err instanceof Error ? err.message : String(err)}`
+        )
+        return null
+      }
     }
-  })
+  )
 
   ipcMain.handle(
     'file:save',
@@ -92,4 +96,45 @@ export function registerFileHandlers(): void {
     if (result.canceled || result.filePaths.length === 0) return null
     return result.filePaths[0]
   })
+
+  ipcMain.handle(
+    'file:createProject',
+    async (
+      _event,
+      folderPath: string,
+      title: string
+    ): Promise<{ projectFile: OctanisProjectFile; filePath: string }> => {
+      const now = new Date().toISOString()
+      const projectFile: OctanisProjectFile = {
+        project: {
+          version: '1.0',
+          meta: { title, author: '', createdAt: now, updatedAt: now },
+          bpm: 120,
+          timeSignature: [4, 4],
+          durationSec: 120,
+          masterVolume: 1.0,
+          tracks: [],
+        },
+        audioFiles: {},
+      }
+      const safeName = title.replace(/[^a-zA-Z0-9_-]/g, '_') || 'untitled'
+      const filePath = join(folderPath, `${safeName}.octanis.json`)
+      await writeFile(filePath, JSON.stringify(projectFile, null, 2), 'utf-8')
+      return { projectFile, filePath }
+    }
+  )
+
+  ipcMain.handle(
+    'file:openByPath',
+    async (_event, filePath: string): Promise<OctanisProjectFile | null> => {
+      try {
+        const raw = await readFile(filePath, 'utf-8')
+        const parsed = JSON.parse(raw)
+        return OctanisProjectFileSchema.parse(parsed)
+      } catch (err) {
+        log.error('file:openByPath error', err)
+        return null
+      }
+    }
+  )
 }

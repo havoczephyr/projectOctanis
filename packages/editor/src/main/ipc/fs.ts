@@ -1,6 +1,6 @@
 import { ipcMain } from 'electron'
-import { readdir, readFile, stat } from 'fs/promises'
-import { join } from 'path'
+import { readdir, readFile, stat, copyFile, mkdir } from 'fs/promises'
+import { join, dirname } from 'path'
 import log from 'electron-log'
 import type { FileEntry } from '../../ipcTypes'
 
@@ -54,4 +54,29 @@ export function registerFsHandlers(): void {
       throw err
     }
   })
+
+  ipcMain.handle(
+    'fs:copyFile',
+    async (_event, sourcePath: string, destPath: string): Promise<string> => {
+      try {
+        const dir = dirname(destPath)
+        await mkdir(dir, { recursive: true })
+        // Handle filename collision
+        let finalPath = destPath
+        let counter = 1
+        while (await stat(finalPath).then(() => true, () => false)) {
+          const dotIdx = destPath.lastIndexOf('.')
+          const base = dotIdx !== -1 ? destPath.substring(0, dotIdx) : destPath
+          const ext = dotIdx !== -1 ? destPath.substring(dotIdx) : ''
+          finalPath = `${base}_${counter}${ext}`
+          counter++
+        }
+        await copyFile(sourcePath, finalPath)
+        return finalPath
+      } catch (err) {
+        log.error('fs:copyFile error', err)
+        throw err
+      }
+    }
+  )
 }

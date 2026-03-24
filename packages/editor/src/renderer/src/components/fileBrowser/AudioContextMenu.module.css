@@ -35,3 +35,15 @@
   color: var(--accent-cyan);
   text-shadow: 0 0 6px var(--accent-cyan);
 }
+
+/* ─── UI Intensity Overrides ─────────────────────────────────────────────── */
+:root[data-ui-intensity="balanced"] .menu {
+  backdrop-filter: blur(6px);
+}
+:root[data-ui-intensity="low"] .menu {
+  backdrop-filter: none;
+  background: rgba(20, 20, 30, 0.98);
+}
+:root[data-ui-intensity="low"] .menuItem:hover {
+  text-shadow: none;
+}
