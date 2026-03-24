@@ -105,43 +105,68 @@ describe('projectStore', () => {
     })
   })
 
-  describe('upsertEnvelopePoint', () => {
-    it('inserts a new point sorted by time', () => {
+  describe('addFadeRegion', () => {
+    it('adds a fade region to a clip sorted by startSec', () => {
       const trackId = useProjectStore.getState().addTrack()
       const clipId = useProjectStore.getState().addClip(trackId, 'audio-1', 0)
 
-      useProjectStore.getState().upsertEnvelopePoint(trackId, clipId, { timeSec: 5, gain: 0.8 })
-      useProjectStore.getState().upsertEnvelopePoint(trackId, clipId, { timeSec: 2, gain: 0.3 })
+      useProjectStore.getState().addFadeRegion(trackId, clipId, {
+        id: 'r2', startSec: 5, endSec: 8, peakGain: 0.5, controlPointX: 0.5,
+      })
+      useProjectStore.getState().addFadeRegion(trackId, clipId, {
+        id: 'r1', startSec: 1, endSec: 3, peakGain: 1.5, controlPointX: 0.5,
+      })
 
-      const envelope = useProjectStore.getState().projectFile.project.tracks[0].clips[0].envelope
-      expect(envelope).toHaveLength(2)
-      expect(envelope[0].timeSec).toBe(2)
-      expect(envelope[1].timeSec).toBe(5)
+      const regions = useProjectStore.getState().projectFile.project.tracks[0].clips[0].fadeRegions
+      expect(regions).toHaveLength(2)
+      expect(regions[0].id).toBe('r1')
+      expect(regions[1].id).toBe('r2')
     })
 
-    it('updates existing point at same time', () => {
+    it('rejects overlapping regions', () => {
       const trackId = useProjectStore.getState().addTrack()
       const clipId = useProjectStore.getState().addClip(trackId, 'audio-1', 0)
 
-      useProjectStore.getState().upsertEnvelopePoint(trackId, clipId, { timeSec: 5, gain: 0.8 })
-      useProjectStore.getState().upsertEnvelopePoint(trackId, clipId, { timeSec: 5, gain: 1.5 })
+      useProjectStore.getState().addFadeRegion(trackId, clipId, {
+        id: 'r1', startSec: 2, endSec: 6, peakGain: 0.5, controlPointX: 0.5,
+      })
+      useProjectStore.getState().addFadeRegion(trackId, clipId, {
+        id: 'r2', startSec: 4, endSec: 8, peakGain: 1.0, controlPointX: 0.5,
+      })
 
-      const envelope = useProjectStore.getState().projectFile.project.tracks[0].clips[0].envelope
-      expect(envelope).toHaveLength(1)
-      expect(envelope[0].gain).toBe(1.5)
+      const regions = useProjectStore.getState().projectFile.project.tracks[0].clips[0].fadeRegions
+      expect(regions).toHaveLength(1)
+      expect(regions[0].id).toBe('r1')
     })
   })
 
-  describe('removeEnvelopePoint', () => {
-    it('removes point by timeSec proximity', () => {
+  describe('updateFadeRegion', () => {
+    it('updates peakGain of a fade region', () => {
       const trackId = useProjectStore.getState().addTrack()
       const clipId = useProjectStore.getState().addClip(trackId, 'audio-1', 0)
+      useProjectStore.getState().addFadeRegion(trackId, clipId, {
+        id: 'r1', startSec: 1, endSec: 5, peakGain: 0.5, controlPointX: 0.5,
+      })
 
-      useProjectStore.getState().upsertEnvelopePoint(trackId, clipId, { timeSec: 5, gain: 0.8 })
-      useProjectStore.getState().removeEnvelopePoint(trackId, clipId, 5.0005)
+      useProjectStore.getState().updateFadeRegion(trackId, clipId, 'r1', { peakGain: 1.8 })
 
-      const envelope = useProjectStore.getState().projectFile.project.tracks[0].clips[0].envelope
-      expect(envelope).toHaveLength(0)
+      const region = useProjectStore.getState().projectFile.project.tracks[0].clips[0].fadeRegions[0]
+      expect(region.peakGain).toBe(1.8)
+    })
+  })
+
+  describe('removeFadeRegion', () => {
+    it('removes a fade region by id', () => {
+      const trackId = useProjectStore.getState().addTrack()
+      const clipId = useProjectStore.getState().addClip(trackId, 'audio-1', 0)
+      useProjectStore.getState().addFadeRegion(trackId, clipId, {
+        id: 'r1', startSec: 1, endSec: 5, peakGain: 0.5, controlPointX: 0.5,
+      })
+
+      useProjectStore.getState().removeFadeRegion(trackId, clipId, 'r1')
+
+      const regions = useProjectStore.getState().projectFile.project.tracks[0].clips[0].fadeRegions
+      expect(regions).toHaveLength(0)
     })
   })
 })

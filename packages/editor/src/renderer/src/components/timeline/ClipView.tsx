@@ -1,8 +1,7 @@
 import React from 'react'
 import type { Track, Clip } from '@octanis/shared'
 import { WaveformCanvas } from './WaveformCanvas'
-import { EnvelopeOverlay } from './EnvelopeOverlay'
-import { FadeHandle } from './FadeHandle'
+import { FadeRegionOverlay } from './FadeRegionOverlay'
 import { LoopRegion } from './LoopRegion'
 import { useTimeToPixel } from '../../hooks/useTimeToPixel'
 import { useClipDrag } from '../../hooks/useClipDrag'
@@ -61,31 +60,12 @@ export function ClipView({ track, clip, laneHeight }: Props): React.ReactElement
         audioFileId={clip.audioFileId}
         clipDurationSec={clipDurationSec}
         trimStartSec={clip.trimStartSec}
-        envelope={clip.envelope}
+        fadeRegions={clip.fadeRegions}
+        clipVolume={clip.volume}
         trackColor={track.color}
         width={clipWidth}
         height={laneHeight}
       />
-
-      {/* SVG layer for fades */}
-      <svg
-        style={{ position: 'absolute', top: 0, left: 0, width: clipWidth, height: laneHeight, pointerEvents: 'none' }}
-      >
-        <FadeHandle
-          trackId={track.id}
-          clip={clip}
-          side="in"
-          height={laneHeight}
-          clipWidth={clipWidth}
-        />
-        <FadeHandle
-          trackId={track.id}
-          clip={clip}
-          side="out"
-          height={laneHeight}
-          clipWidth={clipWidth}
-        />
-      </svg>
 
       {/* Loop region */}
       {clip.loop && (
@@ -97,13 +77,14 @@ export function ClipView({ track, clip, laneHeight }: Props): React.ReactElement
         />
       )}
 
-      {/* Envelope overlay (top layer — only for single-selected clips) */}
+      {/* Fade region overlay (always rendered — handles collapsed/editing mode internally) */}
       {isSelected && selectedClipIds.length === 1 && (
-        <EnvelopeOverlay
+        <FadeRegionOverlay
           trackId={track.id}
           clipId={clip.id}
-          envelope={clip.envelope}
+          fadeRegions={clip.fadeRegions}
           clipDurationSec={clipDurationSec}
+          clipVolume={clip.volume}
           width={clipWidth}
           height={laneHeight}
           trackColor={track.color}

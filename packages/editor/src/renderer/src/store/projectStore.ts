@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { temporal } from 'zundo'
 import { immer } from 'zustand/middleware/immer'
 import { subscribeWithSelector } from 'zustand/middleware'
 import { nanoid } from 'nanoid'
@@ -7,13 +8,11 @@ import {
   type OctanisProject,
   type Track,
   type Clip,
-  type EnvelopePoint,
-  type FadeHandle,
+  type FadeRegion,
   type LoopRegion,
   type AudioFile,
   defaultClip,
   defaultTrack,
-  defaultFadeHandle,
   pickTrackColor,
 } from '@octanis/shared'
 
@@ -63,26 +62,19 @@ interface ProjectState {
   moveClip: (trackId: string, clipId: string, newStartSec: number) => void
   moveClipToTrack: (fromTrackId: string, clipId: string, toTrackId: string, newStartSec: number) => void
 
-  // Envelope
-  upsertEnvelopePoint: (trackId: string, clipId: string, point: EnvelopePoint) => void
-  removeEnvelopePoint: (trackId: string, clipId: string, timeSec: number) => void
-  moveEnvelopePoints: (
-    trackId: string,
-    clipId: string,
-    moves: Array<{ fromTimeSec: number; to: EnvelopePoint }>
-  ) => void
-
-  // Fades
-  setFadeIn: (trackId: string, clipId: string, fade: Partial<FadeHandle>) => void
-  setFadeOut: (trackId: string, clipId: string, fade: Partial<FadeHandle>) => void
+  // Fade regions
+  addFadeRegion: (trackId: string, clipId: string, region: FadeRegion) => void
+  updateFadeRegion: (trackId: string, clipId: string, regionId: string, patch: Partial<Omit<FadeRegion, 'id'>>) => void
+  removeFadeRegion: (trackId: string, clipId: string, regionId: string) => void
 
   // Loop
   setLoop: (trackId: string, clipId: string, loop: LoopRegion | null) => void
 }
 
 export const useProjectStore = create<ProjectState>()(
-  subscribeWithSelector(
-    immer((set) => ({
+  temporal(
+    subscribeWithSelector(
+      immer((set) => ({
       projectFile: newProject(),
       currentFilePath: null,
       isDirty: false,
@@ -233,68 +225,44 @@ export const useProjectStore = create<ProjectState>()(
           state.isDirty = true
         }),
 
-      upsertEnvelopePoint: (trackId, clipId, point) =>
+      addFadeRegion: (trackId, clipId, region) =>
         set((state) => {
           const track = state.projectFile.project.tracks.find((t) => t.id === trackId)
           const clip = track?.clips.find((c) => c.id === clipId)
           if (!clip) return
-          const existing = clip.envelope.findIndex(
-            (p) => Math.abs(p.timeSec - point.timeSec) < 0.001
-          )
-          if (existing !== -1) {
-            clip.envelope[existing] = point
-          } else {
-            clip.envelope.push(point)
-            clip.envelope.sort((a, b) => a.timeSec - b.timeSec)
+          // Reject if overlapping an existing region
+          const newStart = region.startSec
+          const newEnd = region.endSec
+          for (let i = 0; i < clip.fadeRegions.length; i++) {
+            const r = clip.fadeRegions[i]
+            if (newStart < r.endSec && newEnd > r.startSec) return
           }
+          clip.fadeRegions.push(region)
+          clip.fadeRegions.sort((a, b) => a.startSec - b.startSec)
           state.isDirty = true
         }),
 
-      removeEnvelopePoint: (trackId, clipId, timeSec) =>
+      updateFadeRegion: (trackId, clipId, regionId, patch) =>
         set((state) => {
           const track = state.projectFile.project.tracks.find((t) => t.id === trackId)
           const clip = track?.clips.find((c) => c.id === clipId)
           if (!clip) return
-          const idx = clip.envelope.findIndex((p) => Math.abs(p.timeSec - timeSec) < 0.001)
-          if (idx !== -1) clip.envelope.splice(idx, 1)
-          state.isDirty = true
-        }),
-
-      moveEnvelopePoints: (trackId, clipId, moves) =>
-        set((state) => {
-          const track = state.projectFile.project.tracks.find((t) => t.id === trackId)
-          const clip = track?.clips.find((c) => c.id === clipId)
-          if (!clip) return
-          for (const move of moves) {
-            const idx = clip.envelope.findIndex(
-              (p) => Math.abs(p.timeSec - move.fromTimeSec) < 0.001
-            )
-            if (idx !== -1) {
-              clip.envelope[idx] = move.to
-            }
-          }
-          clip.envelope.sort((a, b) => a.timeSec - b.timeSec)
-          state.isDirty = true
-        }),
-
-      setFadeIn: (trackId, clipId, fade) =>
-        set((state) => {
-          const track = state.projectFile.project.tracks.find((t) => t.id === trackId)
-          const clip = track?.clips.find((c) => c.id === clipId)
-          if (clip) {
-            Object.assign(clip.fadeIn, fade)
+          const region = clip.fadeRegions.find((r) => r.id === regionId)
+          if (region) {
+            Object.assign(region, patch)
+            clip.fadeRegions.sort((a, b) => a.startSec - b.startSec)
             state.isDirty = true
           }
         }),
 
-      setFadeOut: (trackId, clipId, fade) =>
+      removeFadeRegion: (trackId, clipId, regionId) =>
         set((state) => {
           const track = state.projectFile.project.tracks.find((t) => t.id === trackId)
           const clip = track?.clips.find((c) => c.id === clipId)
-          if (clip) {
-            Object.assign(clip.fadeOut, fade)
-            state.isDirty = true
-          }
+          if (!clip) return
+          const idx = clip.fadeRegions.findIndex((r) => r.id === regionId)
+          if (idx !== -1) clip.fadeRegions.splice(idx, 1)
+          state.isDirty = true
         }),
 
       setLoop: (trackId, clipId, loop) =>
@@ -307,5 +275,14 @@ export const useProjectStore = create<ProjectState>()(
           }
         }),
     }))
+    ),
+    {
+      partialize: (state) => ({
+        projectFile: state.projectFile,
+      }),
+      equality: (pastState, currentState) =>
+        JSON.stringify(pastState) === JSON.stringify(currentState),
+      limit: 100,
+    }
   )
 )

@@ -32,14 +32,15 @@ interface UiStore {
   sidebarFolder: string | null
   setSidebarFolder: (path: string | null) => void
 
-  /** timeSec values of selected envelope points */
-  selectedEnvelopePoints: number[]
-  selectEnvelopePoint: (timeSec: number, additive: boolean) => void
-  deselectAllEnvelopePoints: () => void
-}
+  /** Fade region editing mode */
+  editingFadeRegionClipId: string | null
+  editingFadeRegionId: string | null
+  enterFadeRegionEditMode: (clipId: string, regionId?: string) => void
+  exitFadeRegionEditMode: () => void
 
-export function isPointSelected(selected: number[], timeSec: number): boolean {
-  return selected.some((t) => Math.abs(t - timeSec) < 0.001)
+  /** Undo history panel visibility */
+  showUndoHistoryPanel: boolean
+  setShowUndoHistoryPanel: (show: boolean) => void
 }
 
 export const MIN_ZOOM = 20   // px per second
@@ -62,17 +63,19 @@ export const useUiStore = create<UiStore>((set) => ({
   selectClip: (clipId, additive) =>
     set((s) => {
       if (additive) {
-        // Shift-click: toggle in/out of selection
         const idx = s.selectedClipIds.indexOf(clipId)
         if (idx !== -1) {
           return { selectedClipIds: s.selectedClipIds.filter((id) => id !== clipId) }
         }
         return { selectedClipIds: [...s.selectedClipIds, clipId] }
       }
-      // Normal click: replace selection
       return { selectedClipIds: [clipId] }
     }),
-  deselectAll: () => set({ selectedClipIds: [], selectedEnvelopePoints: [] }),
+  deselectAll: () => set({
+    selectedClipIds: [],
+    editingFadeRegionClipId: null,
+    editingFadeRegionId: null,
+  }),
 
   hoveredTrackId: null,
   setHoveredTrack: (trackId) => set({ hoveredTrackId: trackId }),
@@ -83,21 +86,13 @@ export const useUiStore = create<UiStore>((set) => ({
   sidebarFolder: null,
   setSidebarFolder: (path) => set({ sidebarFolder: path }),
 
-  selectedEnvelopePoints: [],
-  selectEnvelopePoint: (timeSec, additive) =>
-    set((s) => {
-      if (additive) {
-        const idx = s.selectedEnvelopePoints.findIndex(
-          (t) => Math.abs(t - timeSec) < 0.001
-        )
-        if (idx !== -1) {
-          return {
-            selectedEnvelopePoints: s.selectedEnvelopePoints.filter((_, i) => i !== idx),
-          }
-        }
-        return { selectedEnvelopePoints: [...s.selectedEnvelopePoints, timeSec] }
-      }
-      return { selectedEnvelopePoints: [timeSec] }
-    }),
-  deselectAllEnvelopePoints: () => set({ selectedEnvelopePoints: [] }),
+  editingFadeRegionClipId: null,
+  editingFadeRegionId: null,
+  enterFadeRegionEditMode: (clipId, regionId) =>
+    set({ editingFadeRegionClipId: clipId, editingFadeRegionId: regionId ?? null }),
+  exitFadeRegionEditMode: () =>
+    set({ editingFadeRegionClipId: null, editingFadeRegionId: null }),
+
+  showUndoHistoryPanel: false,
+  setShowUndoHistoryPanel: (show) => set({ showUndoHistoryPanel: show }),
 }))

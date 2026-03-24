@@ -2,20 +2,18 @@ import { z } from 'zod'
 
 // ─── Primitives ───────────────────────────────────────────────────────────────
 
-export const FadeCurveSchema = z.enum(['linear', 'exponential', 'logarithmic'])
-export type FadeCurve = z.infer<typeof FadeCurveSchema>
-
-export const FadeHandleSchema = z.object({
-  durationSec: z.number().min(0),
-  curve: FadeCurveSchema,
+export const FadeRegionSchema = z.object({
+  id: z.string(),
+  /** Start of the fade region, relative to clip start (seconds) */
+  startSec: z.number().min(0),
+  /** End of the fade region, relative to clip start (seconds) */
+  endSec: z.number().min(0),
+  /** Gain value at the apex/nadir of the bezier curve (0..2) */
+  peakGain: z.number().min(0).max(2),
+  /** Normalized horizontal position of bezier control point (0..1, 0.5 = centered) */
+  controlPointX: z.number().min(0).max(1),
 })
-export type FadeHandle = z.infer<typeof FadeHandleSchema>
-
-export const EnvelopePointSchema = z.object({
-  timeSec: z.number().min(0), // relative to clip startSec
-  gain: z.number().min(0).max(2),
-})
-export type EnvelopePoint = z.infer<typeof EnvelopePointSchema>
+export type FadeRegion = z.infer<typeof FadeRegionSchema>
 
 export const LoopRegionSchema = z.object({
   startSec: z.number().min(0),
@@ -48,10 +46,8 @@ export const ClipSchema = z.object({
   trimEndSec: z.number().min(0).nullable(),
   /** Clip-level gain multiplier (0..2, where 1.0 = original volume) */
   volume: z.number().min(0).max(2),
-  /** Volume automation — sparse list of (time, gain) pairs, linearly interpolated */
-  envelope: z.array(EnvelopePointSchema),
-  fadeIn: FadeHandleSchema,
-  fadeOut: FadeHandleSchema,
+  /** Bounded gain-modification zones (layer masks for gain shaping) */
+  fadeRegions: z.array(FadeRegionSchema),
   loop: LoopRegionSchema.nullable(),
 })
 export type Clip = z.infer<typeof ClipSchema>
@@ -105,10 +101,6 @@ export type OctanisProjectFile = z.infer<typeof OctanisProjectFileSchema>
 
 // ─── Defaults ─────────────────────────────────────────────────────────────────
 
-export function defaultFadeHandle(): FadeHandle {
-  return { durationSec: 0, curve: 'linear' }
-}
-
 export function defaultClip(audioFileId: string, id: string): Clip {
   return {
     id,
@@ -117,9 +109,7 @@ export function defaultClip(audioFileId: string, id: string): Clip {
     trimStartSec: 0,
     trimEndSec: null,
     volume: 1.0,
-    envelope: [],
-    fadeIn: defaultFadeHandle(),
-    fadeOut: defaultFadeHandle(),
+    fadeRegions: [],
     loop: null,
   }
 }
@@ -155,21 +145,32 @@ export function pickTrackColor(trackIndex: number): string {
 // ─── Interpolation helpers ────────────────────────────────────────────────────
 
 /**
- * Linearly interpolate the gain value from an envelope at a given clip-relative time.
- * If the envelope is empty, returns 1.0 (unity gain).
+ * Evaluate a quadratic bezier at parameter t (0..1).
+ * P0 = start, P1 = control, P2 = end.
  */
-export function interpolateEnvelope(envelope: EnvelopePoint[], timeSec: number): number {
-  if (envelope.length === 0) return 1.0
-  if (timeSec <= envelope[0].timeSec) return envelope[0].gain
-  if (timeSec >= envelope[envelope.length - 1].timeSec) return envelope[envelope.length - 1].gain
+export function quadBezier(p0: number, p1: number, p2: number, t: number): number {
+  const mt = 1 - t
+  return mt * mt * p0 + 2 * mt * t * p1 + t * t * p2
+}
 
-  for (let i = 1; i < envelope.length; i++) {
-    const prev = envelope[i - 1]
-    const next = envelope[i]
-    if (timeSec >= prev.timeSec && timeSec <= next.timeSec) {
-      const t = (timeSec - prev.timeSec) / (next.timeSec - prev.timeSec)
-      return prev.gain + t * (next.gain - prev.gain)
+/**
+ * Compute gain from fade regions at a given clip-relative time.
+ * Outside all regions returns clipVolume. Inside a region, returns the
+ * quadratic bezier value (departing from clipVolume, peaking at peakGain,
+ * returning to clipVolume).
+ */
+export function interpolateFadeRegions(
+  regions: FadeRegion[],
+  timeSec: number,
+  clipVolume: number
+): number {
+  for (const region of regions) {
+    if (timeSec >= region.startSec && timeSec <= region.endSec) {
+      const duration = region.endSec - region.startSec
+      if (duration <= 0) return clipVolume
+      const t = (timeSec - region.startSec) / duration
+      return quadBezier(clipVolume, region.peakGain, clipVolume, t)
     }
   }
-  return 1.0
+  return clipVolume
 }

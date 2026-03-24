@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { useUiStore, MIN_ZOOM, MAX_ZOOM, isPointSelected } from './uiStore'
+import { useUiStore, MIN_ZOOM, MAX_ZOOM } from './uiStore'
 
 function resetStore(): void {
   useUiStore.setState(useUiStore.getInitialState())
@@ -32,11 +32,13 @@ describe('uiStore', () => {
   })
 
   describe('deselectAll', () => {
-    it('clears all selected clips', () => {
+    it('clears all selected clips and fade region edit mode', () => {
       useUiStore.getState().selectClip('clip-1', false)
-      useUiStore.getState().selectClip('clip-2', true)
+      useUiStore.getState().enterFadeRegionEditMode('clip-1', 'r1')
       useUiStore.getState().deselectAll()
       expect(useUiStore.getState().selectedClipIds).toEqual([])
+      expect(useUiStore.getState().editingFadeRegionClipId).toBeNull()
+      expect(useUiStore.getState().editingFadeRegionId).toBeNull()
     })
   })
 
@@ -68,63 +70,24 @@ describe('uiStore', () => {
     })
   })
 
-  describe('selectEnvelopePoint', () => {
-    it('replaces selection on normal click', () => {
-      useUiStore.getState().selectEnvelopePoint(1.0, false)
-      expect(useUiStore.getState().selectedEnvelopePoints).toEqual([1.0])
-
-      useUiStore.getState().selectEnvelopePoint(2.0, false)
-      expect(useUiStore.getState().selectedEnvelopePoints).toEqual([2.0])
+  describe('fadeRegionEditMode', () => {
+    it('enters edit mode with clipId and optional regionId', () => {
+      useUiStore.getState().enterFadeRegionEditMode('clip-1', 'r1')
+      expect(useUiStore.getState().editingFadeRegionClipId).toBe('clip-1')
+      expect(useUiStore.getState().editingFadeRegionId).toBe('r1')
     })
 
-    it('adds to selection on shift-click', () => {
-      useUiStore.getState().selectEnvelopePoint(1.0, false)
-      useUiStore.getState().selectEnvelopePoint(2.0, true)
-      expect(useUiStore.getState().selectedEnvelopePoints).toEqual([1.0, 2.0])
+    it('enters edit mode without regionId', () => {
+      useUiStore.getState().enterFadeRegionEditMode('clip-1')
+      expect(useUiStore.getState().editingFadeRegionClipId).toBe('clip-1')
+      expect(useUiStore.getState().editingFadeRegionId).toBeNull()
     })
 
-    it('toggles off on shift-click if already selected', () => {
-      useUiStore.getState().selectEnvelopePoint(1.0, false)
-      useUiStore.getState().selectEnvelopePoint(2.0, true)
-      useUiStore.getState().selectEnvelopePoint(1.0, true)
-      expect(useUiStore.getState().selectedEnvelopePoints).toEqual([2.0])
-    })
-  })
-
-  describe('deselectAllEnvelopePoints', () => {
-    it('clears envelope selection', () => {
-      useUiStore.getState().selectEnvelopePoint(1.0, false)
-      useUiStore.getState().selectEnvelopePoint(2.0, true)
-      useUiStore.getState().deselectAllEnvelopePoints()
-      expect(useUiStore.getState().selectedEnvelopePoints).toEqual([])
-    })
-  })
-
-  describe('deselectAll clears envelope points too', () => {
-    it('clears both clip and envelope selection', () => {
-      useUiStore.getState().selectClip('clip-1', false)
-      useUiStore.getState().selectEnvelopePoint(1.0, false)
-      useUiStore.getState().deselectAll()
-      expect(useUiStore.getState().selectedClipIds).toEqual([])
-      expect(useUiStore.getState().selectedEnvelopePoints).toEqual([])
-    })
-  })
-
-  describe('isPointSelected', () => {
-    it('matches exact time', () => {
-      expect(isPointSelected([1.0, 2.0], 1.0)).toBe(true)
-    })
-
-    it('matches within 0.001s threshold', () => {
-      expect(isPointSelected([1.0], 1.0005)).toBe(true)
-    })
-
-    it('does not match outside threshold', () => {
-      expect(isPointSelected([1.0], 1.002)).toBe(false)
-    })
-
-    it('returns false for empty selection', () => {
-      expect(isPointSelected([], 1.0)).toBe(false)
+    it('exits edit mode', () => {
+      useUiStore.getState().enterFadeRegionEditMode('clip-1', 'r1')
+      useUiStore.getState().exitFadeRegionEditMode()
+      expect(useUiStore.getState().editingFadeRegionClipId).toBeNull()
+      expect(useUiStore.getState().editingFadeRegionId).toBeNull()
     })
   })
 })

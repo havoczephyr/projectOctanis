@@ -1,0 +1,44 @@
+.overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+}
+
+.overlayEditing {
+  pointer-events: auto;
+  cursor: crosshair;
+}
+
+.bookmark {
+  pointer-events: auto;
+  cursor: pointer;
+  transition: opacity 150ms ease;
+}
+
+.bookmark:hover {
+  opacity: 1 !important;
+}
+
+.controlPoint {
+  pointer-events: auto;
+  cursor: ns-resize;
+  transition: r 100ms ease;
+}
+
+.controlPoint:hover {
+  r: 8;
+}
+
+.controlPoint:active {
+  cursor: grabbing;
+}
+
+.edgeHandle {
+  pointer-events: auto;
+  cursor: ew-resize;
+}
+
+.edgeHandle:hover {
+  stroke-width: 3;
+}

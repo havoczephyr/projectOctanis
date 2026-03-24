@@ -22,6 +22,38 @@ export const octanisApi = {
     readAudioFile: (filePath: string): Promise<ArrayBuffer> =>
       ipcRenderer.invoke('fs:readAudioFile', filePath),
   },
+  menu: {
+    onUndo: (cb: () => void): (() => void) => {
+      const handler = (): void => cb()
+      ipcRenderer.on('menu:undo', handler)
+      return () => { ipcRenderer.removeListener('menu:undo', handler) }
+    },
+    onRedo: (cb: () => void): (() => void) => {
+      const handler = (): void => cb()
+      ipcRenderer.on('menu:redo', handler)
+      return () => { ipcRenderer.removeListener('menu:redo', handler) }
+    },
+    onUndoHistory: (cb: () => void): (() => void) => {
+      const handler = (): void => cb()
+      ipcRenderer.on('menu:undo-history', handler)
+      return () => { ipcRenderer.removeListener('menu:undo-history', handler) }
+    },
+    onFileOpen: (cb: () => void): (() => void) => {
+      const handler = (): void => cb()
+      ipcRenderer.on('menu:file-open', handler)
+      return () => { ipcRenderer.removeListener('menu:file-open', handler) }
+    },
+    onFileSave: (cb: () => void): (() => void) => {
+      const handler = (): void => cb()
+      ipcRenderer.on('menu:file-save', handler)
+      return () => { ipcRenderer.removeListener('menu:file-save', handler) }
+    },
+    onFileSaveAs: (cb: () => void): (() => void) => {
+      const handler = (): void => cb()
+      ipcRenderer.on('menu:file-save-as', handler)
+      return () => { ipcRenderer.removeListener('menu:file-save-as', handler) }
+    },
+  },
 }
 
 export type OctanisAPI = typeof octanisApi

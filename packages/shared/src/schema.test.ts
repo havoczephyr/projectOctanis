@@ -2,22 +2,14 @@ import { describe, it, expect } from 'vitest'
 import {
   defaultClip,
   defaultTrack,
-  defaultFadeHandle,
   pickTrackColor,
-  interpolateEnvelope,
+  interpolateFadeRegions,
+  quadBezier,
   TRACK_COLORS,
   ClipSchema,
   TrackSchema,
   OctanisProjectFileSchema,
 } from './schema'
-
-describe('defaultFadeHandle', () => {
-  it('returns zero-duration linear fade', () => {
-    const fade = defaultFadeHandle()
-    expect(fade.durationSec).toBe(0)
-    expect(fade.curve).toBe('linear')
-  })
-})
 
 describe('defaultClip', () => {
   it('returns a valid Clip with expected defaults', () => {
@@ -28,9 +20,7 @@ describe('defaultClip', () => {
     expect(clip.trimStartSec).toBe(0)
     expect(clip.trimEndSec).toBeNull()
     expect(clip.volume).toBe(1.0)
-    expect(clip.envelope).toEqual([])
-    expect(clip.fadeIn.durationSec).toBe(0)
-    expect(clip.fadeOut.durationSec).toBe(0)
+    expect(clip.fadeRegions).toEqual([])
     expect(clip.loop).toBeNull()
   })
 
@@ -71,34 +61,56 @@ describe('pickTrackColor', () => {
   })
 })
 
-describe('interpolateEnvelope', () => {
-  it('returns 1.0 for empty envelope', () => {
-    expect(interpolateEnvelope([], 5)).toBe(1.0)
+describe('quadBezier', () => {
+  it('returns p0 at t=0', () => {
+    expect(quadBezier(1, 2, 1, 0)).toBe(1)
   })
 
-  it('returns first point gain before first point', () => {
-    const env = [{ timeSec: 2, gain: 0.5 }, { timeSec: 4, gain: 1.5 }]
-    expect(interpolateEnvelope(env, 0)).toBe(0.5)
-    expect(interpolateEnvelope(env, 2)).toBe(0.5)
+  it('returns p2 at t=1', () => {
+    expect(quadBezier(1, 2, 1, 1)).toBe(1)
   })
 
-  it('returns last point gain after last point', () => {
-    const env = [{ timeSec: 2, gain: 0.5 }, { timeSec: 4, gain: 1.5 }]
-    expect(interpolateEnvelope(env, 4)).toBe(1.5)
-    expect(interpolateEnvelope(env, 10)).toBe(1.5)
+  it('returns control-weighted value at t=0.5', () => {
+    // At t=0.5: 0.25*1 + 2*0.25*2 + 0.25*1 = 0.25 + 1 + 0.25 = 1.5
+    expect(quadBezier(1, 2, 1, 0.5)).toBeCloseTo(1.5)
+  })
+})
+
+describe('interpolateFadeRegions', () => {
+  it('returns clipVolume when no regions exist', () => {
+    expect(interpolateFadeRegions([], 5, 1.0)).toBe(1.0)
   })
 
-  it('linearly interpolates between points', () => {
-    const env = [{ timeSec: 0, gain: 0 }, { timeSec: 10, gain: 2.0 }]
-    expect(interpolateEnvelope(env, 5)).toBeCloseTo(1.0)
-    expect(interpolateEnvelope(env, 2.5)).toBeCloseTo(0.5)
+  it('returns clipVolume when time is outside all regions', () => {
+    const regions = [{ id: 'r1', startSec: 2, endSec: 4, peakGain: 0.5, controlPointX: 0.5 }]
+    expect(interpolateFadeRegions(regions, 0, 1.0)).toBe(1.0)
+    expect(interpolateFadeRegions(regions, 5, 1.0)).toBe(1.0)
   })
 
-  it('handles single-point envelope', () => {
-    const env = [{ timeSec: 3, gain: 0.8 }]
-    expect(interpolateEnvelope(env, 0)).toBe(0.8)
-    expect(interpolateEnvelope(env, 3)).toBe(0.8)
-    expect(interpolateEnvelope(env, 10)).toBe(0.8)
+  it('returns bezier value inside a region', () => {
+    const regions = [{ id: 'r1', startSec: 0, endSec: 10, peakGain: 2.0, controlPointX: 0.5 }]
+    const mid = interpolateFadeRegions(regions, 5, 1.0)
+    // At t=0.5: quadBezier(1.0, 2.0, 1.0, 0.5) = 1.5
+    expect(mid).toBeCloseTo(1.5)
+  })
+
+  it('returns clipVolume at region edges', () => {
+    const regions = [{ id: 'r1', startSec: 2, endSec: 4, peakGain: 0, controlPointX: 0.5 }]
+    // At t=0 (start): quadBezier(1.0, 0, 1.0, 0) = 1.0
+    expect(interpolateFadeRegions(regions, 2, 1.0)).toBeCloseTo(1.0)
+    // At t=1 (end): quadBezier(1.0, 0, 1.0, 1) = 1.0
+    expect(interpolateFadeRegions(regions, 4, 1.0)).toBeCloseTo(1.0)
+  })
+
+  it('handles zero-duration region gracefully', () => {
+    const regions = [{ id: 'r1', startSec: 3, endSec: 3, peakGain: 0.5, controlPointX: 0.5 }]
+    expect(interpolateFadeRegions(regions, 3, 1.0)).toBe(1.0)
+  })
+
+  it('respects clipVolume parameter', () => {
+    const regions = [{ id: 'r1', startSec: 0, endSec: 10, peakGain: 1.0, controlPointX: 0.5 }]
+    // clipVolume=0.8, peakGain=1.0, at t=0.5: quadBezier(0.8, 1.0, 0.8, 0.5) = 0.9
+    expect(interpolateFadeRegions(regions, 5, 0.8)).toBeCloseTo(0.9)
   })
 })
 

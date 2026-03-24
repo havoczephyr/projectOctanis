@@ -1,7 +1,7 @@
 import { useEffect, useRef, useCallback } from 'react'
 import { useTransportStore } from '../store/transportStore'
 import { useProjectStore } from '../store/projectStore'
-import type { OctanisProjectFile } from '@octanis/shared'
+import { type OctanisProjectFile, quadBezier } from '@octanis/shared'
 
 // Cache for decoded AudioBuffers by audioFileId
 const bufferCache = new Map<string, AudioBuffer>()
@@ -101,40 +101,20 @@ export function useAudioEngine(): { analyser: AnalyserNode | undefined } {
           source.connect(gainNode)
           gainNode.connect(analyserRef.current ?? ctx.destination)
 
-          // Apply volume envelope via automation
-          for (let i = 0; i < clip.envelope.length; i++) {
-            const pt = clip.envelope[i]
-            const absTime = ctx.currentTime + (clip.startSec + pt.timeSec - fromSec)
-            if (absTime >= ctx.currentTime) {
-              gainNode.gain.setValueAtTime(
-                pt.gain * clip.volume * track.volume * masterVolume,
-                absTime
-              )
+          // Apply fade regions via bezier curve sampling
+          const baseGain = clip.volume * track.volume * masterVolume
+          for (const region of clip.fadeRegions) {
+            const regionDuration = region.endSec - region.startSec
+            if (regionDuration <= 0) continue
+            const steps = Math.max(10, Math.ceil(regionDuration * 50))
+            for (let i = 0; i <= steps; i++) {
+              const t = i / steps
+              const timeSec = region.startSec + t * regionDuration
+              const absTime = ctx.currentTime + (clip.startSec + timeSec - fromSec)
+              if (absTime < ctx.currentTime) continue
+              const gain = quadBezier(baseGain, region.peakGain * track.volume * masterVolume, baseGain, t)
+              gainNode.gain.setValueAtTime(gain, absTime)
             }
-          }
-
-          // Fade in
-          if (clip.fadeIn.durationSec > 0) {
-            const fadeStart = ctx.currentTime + Math.max(0, clip.startSec - fromSec)
-            gainNode.gain.setValueAtTime(0, fadeStart)
-            gainNode.gain.linearRampToValueAtTime(
-              clip.volume * track.volume * masterVolume,
-              fadeStart + clip.fadeIn.durationSec
-            )
-          }
-
-          // Fade out
-          if (clip.fadeOut.durationSec > 0) {
-            const fadeOutStart =
-              ctx.currentTime + Math.max(0, clip.startSec + clipDuration - clip.fadeOut.durationSec - fromSec)
-            gainNode.gain.setValueAtTime(
-              clip.volume * track.volume * masterVolume,
-              fadeOutStart
-            )
-            gainNode.gain.linearRampToValueAtTime(
-              0,
-              fadeOutStart + clip.fadeOut.durationSec
-            )
           }
 
           // Schedule the clip
