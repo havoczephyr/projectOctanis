@@ -1,0 +1,24 @@
+{
+  "name": "octanis-root",
+  "private": true,
+  "workspaces": [
+    "packages/shared",
+    "packages/editor",
+    "packages/broadcaster"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace=packages/editor",
+    "dev:broadcaster": "npm run dev --workspace=packages/broadcaster",
+    "build": "npm run build --workspace=packages/shared && npm run build --workspace=packages/editor && npm run build --workspace=packages/broadcaster",
+    "build:shared": "npm run build --workspace=packages/shared",
+    "test": "vitest run",
+    "lint": "eslint packages/*/src --ext .ts,.tsx"
+  },
+  "devDependencies": {
+    "electron": "^41.0.3",
+    "eslint": "^9.x",
+    "prettier": "^3.x",
+    "typescript": "^5.9.3",
+    "vitest": "^2.x"
+  }
+}

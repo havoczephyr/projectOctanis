@@ -1,0 +1,87 @@
+.item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 22px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  cursor: default;
+  transition: background var(--transition-fast), color var(--transition-fast);
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.item:hover {
+  background: var(--bg-panel-hover);
+  color: var(--text-primary);
+}
+
+.audioFile {
+  cursor: grab;
+}
+
+@keyframes file-glow {
+  0%, 100% { text-shadow: none; }
+  50%       { text-shadow: 0 0 8px var(--accent-cyan), 0 0 16px rgba(0, 255, 204, 0.4); }
+}
+
+.audioFile:hover {
+  color: var(--accent-cyan);
+}
+
+.audioFile:hover .name {
+  animation: file-glow 1.6s ease-in-out infinite;
+}
+
+.audioFile:hover .icon {
+  opacity: 1;
+  text-shadow: 0 0 6px var(--accent-cyan);
+}
+
+.audioFile:active {
+  cursor: grabbing;
+}
+
+@keyframes preview-pulse {
+  0%, 100% { text-shadow: 0 0 4px var(--accent-cyan); opacity: 0.7; }
+  50%      { text-shadow: 0 0 12px var(--accent-cyan), 0 0 24px rgba(0, 255, 204, 0.5); opacity: 1; }
+}
+
+.previewing {
+  color: var(--accent-cyan);
+  cursor: pointer;
+}
+
+.previewing .icon {
+  animation: preview-pulse 1.2s ease-in-out infinite;
+  opacity: 1;
+}
+
+.previewing .name {
+  text-shadow: 0 0 6px var(--accent-cyan);
+}
+
+.directory {
+  cursor: pointer;
+  color: var(--text-dim);
+}
+
+.directory:hover {
+  color: var(--text-secondary);
+}
+
+.icon {
+  font-size: 10px;
+  flex-shrink: 0;
+  width: 14px;
+  text-align: center;
+  color: var(--accent-cyan);
+  opacity: 0.7;
+  transition: opacity var(--transition-fast), text-shadow var(--transition-fast);
+}
+
+.name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+}

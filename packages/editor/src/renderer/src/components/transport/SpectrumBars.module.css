@@ -1,0 +1,17 @@
+.container {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 28px;
+  padding: 2px 0;
+}
+
+.bar {
+  width: 4px;
+  min-height: 4%;
+  border-radius: 1px 1px 0 0;
+  transition: height 55ms linear;
+  box-shadow: 0 0 6px currentColor, 0 2px 12px currentColor;
+  filter: blur(0.4px);
+  flex-shrink: 0;
+}

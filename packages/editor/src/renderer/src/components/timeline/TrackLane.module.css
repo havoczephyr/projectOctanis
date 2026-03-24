@@ -1,0 +1,36 @@
+.lane {
+  position: relative;
+  border-bottom: 1px solid var(--border-subtle);
+  flex-shrink: 0;
+  background: var(--timeline-bg);
+  transition: background var(--transition-fast);
+}
+
+.lane:hover {
+  background: color-mix(in srgb, var(--timeline-bg), var(--track-color, var(--accent-cyan)) 3%);
+}
+
+.bg {
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    90deg,
+    transparent,
+    transparent calc(var(--grid-cell, 100px) - 1px),
+    var(--timeline-grid) calc(var(--grid-cell, 100px) - 1px),
+    var(--timeline-grid) var(--grid-cell, 100px)
+  );
+  pointer-events: none;
+}
+
+/* Left track color accent stripe */
+.lane::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--track-color, var(--accent-cyan));
+  opacity: 0.5;
+}

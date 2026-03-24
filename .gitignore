@@ -1,0 +1,9 @@
+node_modules/
+dist/
+out/
+.DS_Store
+*.local
+*.octanis.json.bak
+packages/editor/out/
+packages/editor/dist/
+packages/broadcaster/dist/

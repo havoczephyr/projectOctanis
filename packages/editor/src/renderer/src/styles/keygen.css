@@ -1,0 +1,160 @@
+/* ─── Keygen Music Scene Aesthetic ──────────────────────────────────────────
+   Inspired by late-90s / early-00s tracker / scene release aesthetics:
+   semi-translucent panels, neon borders, glowing text, CRT warmth.
+   ──────────────────────────────────────────────────────────────────────── */
+
+/* ─── Glassmorphism panel ─────────────────────────────────────────────────── */
+.panel {
+  background: var(--bg-panel);
+  backdrop-filter: blur(22px) saturate(1.8) brightness(0.95);
+  -webkit-backdrop-filter: blur(22px) saturate(1.8) brightness(0.95);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-panel), inset 0 0 6px rgba(0, 255, 204, 0.05);
+  border-radius: var(--radius-md);
+}
+
+.panel:hover {
+  border-color: rgba(0, 255, 204, 0.45);
+}
+
+.panel--active {
+  border-color: var(--border-glow);
+  box-shadow: var(--shadow-glow), var(--shadow-panel);
+}
+
+/* ─── Neon glow text ──────────────────────────────────────────────────────── */
+.glow-text {
+  color: var(--accent-cyan);
+  text-shadow: 0 0 6px var(--accent-cyan), 0 0 16px rgba(0, 255, 204, 0.5);
+}
+
+.glow-text--green {
+  color: var(--accent-green);
+  text-shadow: 0 0 6px var(--accent-green), 0 0 16px rgba(57, 255, 20, 0.5);
+}
+
+.glow-text--magenta {
+  color: var(--accent-magenta);
+  text-shadow: 0 0 6px var(--accent-magenta), 0 0 16px rgba(255, 0, 255, 0.5);
+}
+
+/* ─── Neon border pulse (active recording / playing state) ───────────────── */
+@keyframes border-pulse {
+  0%, 100% { box-shadow: 0 0 6px var(--border-glow), var(--shadow-panel); }
+  50%       { box-shadow: 0 0 20px var(--border-glow), 0 0 40px rgba(0, 255, 204, 0.3), var(--shadow-panel); }
+}
+
+.pulse-border {
+  animation: border-pulse 2s ease-in-out infinite;
+}
+
+/* ─── Idle spectrum bars animation ───────────────────────────────────────── */
+@keyframes bar-idle-1 {
+  0%, 100% { height: 15%; } 33% { height: 30%; } 66% { height: 10%; }
+}
+@keyframes bar-idle-2 {
+  0%, 100% { height: 20%; } 40% { height: 45%; } 70% { height: 15%; }
+}
+@keyframes bar-idle-3 {
+  0%, 100% { height: 10%; } 50% { height: 35%; } 80% { height: 8%; }
+}
+
+/* ─── Scan-line overlay (subtle CRT effect) ──────────────────────────────── */
+.scanlines::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    to bottom,
+    transparent,
+    transparent 2px,
+    rgba(0, 0, 0, 0.06) 2px,
+    rgba(0, 0, 0, 0.06) 4px
+  );
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* ─── Button styles ───────────────────────────────────────────────────────── */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 4px 10px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  cursor: pointer;
+  transition: border-color 100ms ease, color 100ms ease, box-shadow 100ms ease,
+    transform 80ms ease, background 100ms ease;
+}
+
+.btn:hover {
+  border-color: var(--border-glow);
+  color: var(--accent-cyan);
+  box-shadow: 0 0 8px rgba(0, 255, 204, 0.35);
+}
+
+.btn:active {
+  background: var(--bg-panel-active);
+  transform: scale(0.93);
+  box-shadow: 0 0 4px rgba(0, 255, 204, 0.2);
+}
+
+.btn--primary {
+  background: rgba(0, 255, 204, 0.12);
+  border-color: var(--border-glow);
+  color: var(--accent-cyan);
+}
+
+.btn--primary:hover {
+  background: rgba(0, 255, 204, 0.22);
+  box-shadow: var(--shadow-glow);
+}
+
+.btn--icon {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+}
+
+/* ─── Track lane color strip ─────────────────────────────────────────────── */
+.track-color-strip {
+  width: 3px;
+  flex-shrink: 0;
+  border-radius: var(--radius-sm) 0 0 var(--radius-sm);
+  background: var(--track-color, var(--accent-cyan));
+  box-shadow: 0 0 8px var(--track-color, var(--accent-cyan));
+}
+
+/* ─── Waveform clip block ─────────────────────────────────────────────────── */
+.clip-block {
+  position: absolute;
+  height: 100%;
+  background: var(--bg-clip);
+  border: 1px solid var(--track-color, var(--border));
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-clip);
+  overflow: hidden;
+  cursor: grab;
+  transition: border-color var(--transition-fast);
+}
+
+.clip-block:hover {
+  border-color: var(--track-color, var(--border-glow));
+  box-shadow: 0 0 10px rgba(0, 255, 204, 0.2), var(--shadow-clip);
+}
+
+.clip-block--selected {
+  background: var(--bg-clip-selected);
+  border-color: var(--accent-cyan);
+  box-shadow: 0 0 14px rgba(0, 255, 204, 0.35), var(--shadow-clip);
+}
+
+.clip-block:active {
+  cursor: grabbing;
+}

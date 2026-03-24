@@ -1,0 +1,19 @@
+.overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  cursor: crosshair;
+}
+
+.handle {
+  cursor: grab;
+  transition: r 100ms ease;
+}
+
+.handle:hover {
+  r: 7;
+}
+
+.handle:active {
+  cursor: grabbing;
+}

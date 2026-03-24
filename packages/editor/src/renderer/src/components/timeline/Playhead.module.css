@@ -1,0 +1,59 @@
+.rulerOverlay {
+  position: absolute;
+  left: 0;
+  right: 0;
+  cursor: pointer;
+  z-index: 6;
+}
+
+.playhead {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  pointer-events: none;
+  z-index: 8;
+  transform: translateX(0);
+  will-change: left;
+}
+
+@keyframes playhead-pulse {
+  0%, 100% {
+    opacity: 0.75;
+    box-shadow: 0 0 4px var(--playhead);
+  }
+  50% {
+    opacity: 1;
+    box-shadow: 0 0 14px var(--playhead), 0 0 28px rgba(255, 51, 102, 0.4);
+  }
+}
+
+@keyframes handle-pulse {
+  0%, 100% { box-shadow: 0 0 6px var(--playhead); }
+  50%       { box-shadow: 0 0 14px var(--playhead), 0 0 24px rgba(255,51,102,0.5); }
+}
+
+.handle {
+  width: 10px;
+  height: 10px;
+  background: var(--playhead);
+  clip-path: polygon(50% 100%, 0 0, 100% 0);
+  transform: translateX(-50%);
+  box-shadow: 0 0 6px var(--playhead);
+}
+
+.handle--playing {
+  animation: handle-pulse 0.9s ease-in-out infinite;
+}
+
+.line {
+  width: 1px;
+  height: 100%;
+  background: var(--playhead);
+  transform: translateX(-50%);
+  box-shadow: 0 0 4px var(--playhead);
+  opacity: 0.8;
+}
+
+.line--playing {
+  animation: playhead-pulse 0.9s ease-in-out infinite;
+}

@@ -1,0 +1,62 @@
+.container {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+  background: var(--timeline-bg);
+  position: relative;
+}
+
+.headers {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--track-header-bg);
+  border-right: 1px solid var(--border);
+  z-index: 10;
+}
+
+.rulerCorner {
+  background: var(--ruler-bg);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.addTrackBtn {
+  margin: 8px;
+  flex-shrink: 0;
+}
+
+.scrollArea {
+  flex: 1;
+  overflow: auto;
+  position: relative;
+}
+
+.inner {
+  position: relative;
+  min-height: 100%;
+}
+
+.tracks {
+  display: flex;
+  flex-direction: column;
+}
+
+.dropZone {
+  min-height: 50px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  color: var(--text-dim);
+  letter-spacing: 0.08em;
+  border: 1px dashed var(--border-subtle);
+  margin: 8px;
+  border-radius: var(--radius-md);
+  transition: border-color var(--transition-med), color var(--transition-med);
+}
+
+.dropZone:hover {
+  border-color: var(--border-glow);
+  color: var(--accent-cyan);
+}

@@ -1,0 +1,23 @@
+.controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.timecode {
+  display: flex;
+  align-items: center;
+  background: var(--bg-input);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 3px 10px;
+  min-width: 90px;
+}
+
+.timecodeValue {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  letter-spacing: 0.06em;
+  color: var(--text-secondary);
+  transition: color var(--transition-fast);
+}
