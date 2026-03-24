@@ -17,7 +17,7 @@ interface Props {
 
 export function ClipView({ track, clip, laneHeight }: Props): React.ReactElement {
   const { timeToPixel } = useTimeToPixel()
-  const selectedClipId = useUiStore((s) => s.selectedClipId)
+  const selectedClipIds = useUiStore((s) => s.selectedClipIds)
   const selectClip = useUiStore((s) => s.selectClip)
   const audioFiles = useProjectStore((s) => s.projectFile.audioFiles)
   const audioFile = audioFiles[clip.audioFileId]
@@ -27,20 +27,26 @@ export function ClipView({ track, clip, laneHeight }: Props): React.ReactElement
       ? clip.trimEndSec - clip.trimStartSec
       : audioFile?.durationSec ?? 30
 
-  const clipX = timeToPixel(clip.startSec)
-  const clipWidth = Math.max(4, timeToPixel(clipDurationSec))
-  const isSelected = selectedClipId === clip.id
+  const { onMouseDown, dragOffsetSec, isDragging } = useClipDrag(track.id, clip.id, clip.startSec)
 
-  const { onMouseDown } = useClipDrag(track.id, clip.id, clip.startSec)
+  const clipX = timeToPixel(clip.startSec + dragOffsetSec)
+  const clipWidth = Math.max(4, timeToPixel(clipDurationSec))
+  const isSelected = selectedClipIds.includes(clip.id)
 
   function handleMouseDown(e: React.MouseEvent): void {
-    selectClip(clip.id)
+    selectClip(clip.id, e.shiftKey)
     onMouseDown(e)
   }
 
+  const className = [
+    'clip-block',
+    isSelected ? 'clip-block--selected' : '',
+    isDragging ? 'clip-block--dragging' : '',
+  ].filter(Boolean).join(' ')
+
   return (
     <div
-      className={`clip-block ${isSelected ? 'clip-block--selected' : ''}`}
+      className={className}
       style={
         {
           left: clipX,
@@ -91,8 +97,8 @@ export function ClipView({ track, clip, laneHeight }: Props): React.ReactElement
         />
       )}
 
-      {/* Envelope overlay (top layer — intercepts pointer events for envelope editing) */}
-      {isSelected && (
+      {/* Envelope overlay (top layer — only for single-selected clips) */}
+      {isSelected && selectedClipIds.length === 1 && (
         <EnvelopeOverlay
           trackId={track.id}
           clipId={clip.id}

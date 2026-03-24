@@ -15,9 +15,10 @@ interface UiStore {
   scrollLeft: number
   setScrollLeft: (px: number) => void
 
-  /** ID of the currently selected clip */
-  selectedClipId: string | null
-  selectClip: (clipId: string | null) => void
+  /** IDs of currently selected clips */
+  selectedClipIds: string[]
+  selectClip: (clipId: string, additive: boolean) => void
+  deselectAll: () => void
 
   /** ID of the track the user is hovering over */
   hoveredTrackId: string | null
@@ -30,10 +31,19 @@ interface UiStore {
   /** Path to the folder currently open in the sidebar */
   sidebarFolder: string | null
   setSidebarFolder: (path: string | null) => void
+
+  /** timeSec values of selected envelope points */
+  selectedEnvelopePoints: number[]
+  selectEnvelopePoint: (timeSec: number, additive: boolean) => void
+  deselectAllEnvelopePoints: () => void
 }
 
-const MIN_ZOOM = 20   // px per second
-const MAX_ZOOM = 600  // px per second
+export function isPointSelected(selected: number[], timeSec: number): boolean {
+  return selected.some((t) => Math.abs(t - timeSec) < 0.001)
+}
+
+export const MIN_ZOOM = 20   // px per second
+export const MAX_ZOOM = 600  // px per second
 
 export const useUiStore = create<UiStore>((set) => ({
   theme: 'dark',
@@ -48,8 +58,21 @@ export const useUiStore = create<UiStore>((set) => ({
   scrollLeft: 0,
   setScrollLeft: (px) => set({ scrollLeft: Math.max(0, px) }),
 
-  selectedClipId: null,
-  selectClip: (clipId) => set({ selectedClipId: clipId }),
+  selectedClipIds: [],
+  selectClip: (clipId, additive) =>
+    set((s) => {
+      if (additive) {
+        // Shift-click: toggle in/out of selection
+        const idx = s.selectedClipIds.indexOf(clipId)
+        if (idx !== -1) {
+          return { selectedClipIds: s.selectedClipIds.filter((id) => id !== clipId) }
+        }
+        return { selectedClipIds: [...s.selectedClipIds, clipId] }
+      }
+      // Normal click: replace selection
+      return { selectedClipIds: [clipId] }
+    }),
+  deselectAll: () => set({ selectedClipIds: [], selectedEnvelopePoints: [] }),
 
   hoveredTrackId: null,
   setHoveredTrack: (trackId) => set({ hoveredTrackId: trackId }),
@@ -59,4 +82,22 @@ export const useUiStore = create<UiStore>((set) => ({
 
   sidebarFolder: null,
   setSidebarFolder: (path) => set({ sidebarFolder: path }),
+
+  selectedEnvelopePoints: [],
+  selectEnvelopePoint: (timeSec, additive) =>
+    set((s) => {
+      if (additive) {
+        const idx = s.selectedEnvelopePoints.findIndex(
+          (t) => Math.abs(t - timeSec) < 0.001
+        )
+        if (idx !== -1) {
+          return {
+            selectedEnvelopePoints: s.selectedEnvelopePoints.filter((_, i) => i !== idx),
+          }
+        }
+        return { selectedEnvelopePoints: [...s.selectedEnvelopePoints, timeSec] }
+      }
+      return { selectedEnvelopePoints: [timeSec] }
+    }),
+  deselectAllEnvelopePoints: () => set({ selectedEnvelopePoints: [] }),
 }))

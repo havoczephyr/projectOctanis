@@ -4,7 +4,7 @@ import { TrackLane } from './TrackLane'
 import { TrackHeader } from './TrackHeader'
 import { Playhead } from './Playhead'
 import { useProjectStore } from '../../store/projectStore'
-import { useUiStore } from '../../store/uiStore'
+import { useUiStore, MIN_ZOOM, MAX_ZOOM } from '../../store/uiStore'
 import { useTimeToPixel } from '../../hooks/useTimeToPixel'
 import styles from './Timeline.module.css'
 
@@ -30,13 +30,29 @@ export function Timeline(): React.ReactElement {
     setScrollLeft(e.currentTarget.scrollLeft)
   }
 
-  // Wheel-to-zoom (Ctrl/Cmd + scroll)
-  const zoomBy = useUiStore((s) => s.zoomBy)
+  // Wheel-to-zoom anchored to cursor position (Ctrl/Cmd + scroll)
+  const zoom = useUiStore((s) => s.zoom)
+  const setZoom = useUiStore((s) => s.setZoom)
+  const deselectAll = useUiStore((s) => s.deselectAll)
+
   function handleWheel(e: React.WheelEvent): void {
     if (e.ctrlKey || e.metaKey) {
       e.preventDefault()
-      zoomBy(-e.deltaY * 0.5)
+      const container = scrollContainerRef.current
+      if (!container) return
+
+      const rect = container.getBoundingClientRect()
+      const mouseX = e.clientX - rect.left
+      const timeSec = (scrollLeft + mouseX) / zoom
+
+      const newZoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom + (-e.deltaY * 0.5)))
+      setZoom(newZoom)
+      setScrollLeft(timeSec * newZoom - mouseX)
     }
+  }
+
+  function handleScrollAreaClick(e: React.MouseEvent): void {
+    if (e.target === e.currentTarget) deselectAll()
   }
 
   // Handle audio file drop onto timeline (creates a new track if needed)
@@ -98,6 +114,7 @@ export function Timeline(): React.ReactElement {
         className={styles.scrollArea}
         onScroll={handleScroll}
         onWheel={handleWheel}
+        onClick={handleScrollAreaClick}
         onDrop={(e) => handleDrop(e)}
         onDragOver={(e) => {
           e.preventDefault()

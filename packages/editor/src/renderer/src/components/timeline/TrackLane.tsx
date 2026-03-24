@@ -2,6 +2,7 @@ import React from 'react'
 import type { Track } from '@octanis/shared'
 import { ClipView } from './ClipView'
 import { useProjectStore } from '../../store/projectStore'
+import { useUiStore } from '../../store/uiStore'
 import { useTimeToPixel } from '../../hooks/useTimeToPixel'
 import styles from './TrackLane.module.css'
 
@@ -13,8 +14,17 @@ interface Props {
 
 export function TrackLane({ track, height, onDrop }: Props): React.ReactElement {
   const durationSec = useProjectStore((s) => s.projectFile.project.durationSec)
+  const deselectAll = useUiStore((s) => s.deselectAll)
   const { timeToPixel } = useTimeToPixel()
   const totalWidth = Math.max(timeToPixel(durationSec), 2000)
+
+  function handleClick(e: React.MouseEvent): void {
+    // Deselect if clicking the lane or its bg, not a clip
+    const target = e.target as HTMLElement
+    if (target === e.currentTarget || target.closest(`.${styles.lane}`) === e.currentTarget && !target.closest('.clip-block')) {
+      deselectAll()
+    }
+  }
 
   return (
     <div
@@ -26,6 +36,7 @@ export function TrackLane({ track, height, onDrop }: Props): React.ReactElement 
           '--track-color': track.color,
         } as React.CSSProperties
       }
+      onClick={handleClick}
       onDrop={(e) => { console.debug('[Octanis:DnD] TrackLane drop', { trackId: track.id, trackName: track.name }); e.stopPropagation(); onDrop(e) }}
       onDragOver={(e) => {
         e.preventDefault()

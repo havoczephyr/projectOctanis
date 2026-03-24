@@ -1,7 +1,8 @@
-import React from 'react'
+import React, { useEffect, useRef } from 'react'
 import { type EnvelopePoint, interpolateEnvelope } from '@octanis/shared'
 import { useWaveformDrag } from '../../hooks/useWaveformDrag'
 import { useTimeToPixel } from '../../hooks/useTimeToPixel'
+import { useUiStore, isPointSelected } from '../../store/uiStore'
 import styles from './EnvelopeOverlay.module.css'
 
 interface Props {
@@ -15,6 +16,7 @@ interface Props {
 }
 
 const HANDLE_RADIUS = 5
+const SELECTED_RADIUS = 7
 
 export function EnvelopeOverlay({
   trackId,
@@ -25,8 +27,11 @@ export function EnvelopeOverlay({
   height,
   trackColor,
 }: Props): React.ReactElement {
+  const svgRef = useRef<SVGSVGElement>(null)
   const { timeToPixel } = useTimeToPixel()
-  const { onSvgMouseDown, onHandleDoubleClick } = useWaveformDrag({
+  const selectedPoints = useUiStore((s) => s.selectedEnvelopePoints)
+  const deselectAllEnvelopePoints = useUiStore((s) => s.deselectAllEnvelopePoints)
+  const { onSvgMouseDown, onHandleMouseDown, onHandleDoubleClick } = useWaveformDrag({
     trackId,
     clipId,
     clipDurationSec,
@@ -34,17 +39,10 @@ export function EnvelopeOverlay({
     canvasHeight: height,
   })
 
-  // Build SVG polyline points from envelope
-  function envToSvgPoint(p: EnvelopePoint): string {
-    const x = timeToPixel(p.timeSec)
-    // gain 0 = bottom, gain 1 = middle, gain 2 = top
-    const y = height - (p.gain / 2) * height
-    return `${x},${y}`
-  }
-
-  // Build a path that covers the area under the envelope (for fill)
-  const hasEnvelope = envelope.length > 0
-  const points = hasEnvelope ? envelope.map(envToSvgPoint).join(' ') : ''
+  // Clear envelope selection when this overlay unmounts
+  useEffect(() => {
+    return () => deselectAllEnvelopePoints()
+  }, [deselectAllEnvelopePoints])
 
   // Sample the gain at regular intervals for the continuous line across full width
   const linePoints: string[] = []
@@ -59,6 +57,7 @@ export function EnvelopeOverlay({
 
   return (
     <svg
+      ref={svgRef}
       className={styles.overlay}
       width={width}
       height={height}
@@ -87,21 +86,28 @@ export function EnvelopeOverlay({
       {envelope.map((point) => {
         const x = timeToPixel(point.timeSec)
         const y = height - (point.gain / 2) * height
+        const selected = isPointSelected(selectedPoints, point.timeSec)
         return (
           <circle
             key={point.timeSec}
             cx={x}
             cy={y}
-            r={HANDLE_RADIUS}
-            fill={trackColor}
-            stroke="rgba(255,255,255,0.5)"
-            strokeWidth={1}
-            className={styles.handle}
+            r={selected ? SELECTED_RADIUS : HANDLE_RADIUS}
+            fill={selected ? '#fff' : trackColor}
+            stroke={selected ? trackColor : 'rgba(255,255,255,0.5)'}
+            strokeWidth={selected ? 2 : 1}
+            className={`${styles.handle} ${selected ? styles.handleSelected : ''}`}
             onMouseDown={(e) => {
               e.stopPropagation()
-              onSvgMouseDown(e as unknown as React.MouseEvent<SVGElement>, point)
+              onHandleMouseDown(
+                e as unknown as React.MouseEvent<SVGElement>,
+                point,
+                svgRef.current ?? undefined
+              )
             }}
-            onDoubleClick={(e) => onHandleDoubleClick(e as unknown as React.MouseEvent, point.timeSec)}
+            onDoubleClick={(e) =>
+              onHandleDoubleClick(e as unknown as React.MouseEvent, point.timeSec)
+            }
           />
         )
       })}

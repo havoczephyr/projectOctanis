@@ -66,6 +66,11 @@ interface ProjectState {
   // Envelope
   upsertEnvelopePoint: (trackId: string, clipId: string, point: EnvelopePoint) => void
   removeEnvelopePoint: (trackId: string, clipId: string, timeSec: number) => void
+  moveEnvelopePoints: (
+    trackId: string,
+    clipId: string,
+    moves: Array<{ fromTimeSec: number; to: EnvelopePoint }>
+  ) => void
 
   // Fades
   setFadeIn: (trackId: string, clipId: string, fade: Partial<FadeHandle>) => void
@@ -252,6 +257,23 @@ export const useProjectStore = create<ProjectState>()(
           if (!clip) return
           const idx = clip.envelope.findIndex((p) => Math.abs(p.timeSec - timeSec) < 0.001)
           if (idx !== -1) clip.envelope.splice(idx, 1)
+          state.isDirty = true
+        }),
+
+      moveEnvelopePoints: (trackId, clipId, moves) =>
+        set((state) => {
+          const track = state.projectFile.project.tracks.find((t) => t.id === trackId)
+          const clip = track?.clips.find((c) => c.id === clipId)
+          if (!clip) return
+          for (const move of moves) {
+            const idx = clip.envelope.findIndex(
+              (p) => Math.abs(p.timeSec - move.fromTimeSec) < 0.001
+            )
+            if (idx !== -1) {
+              clip.envelope[idx] = move.to
+            }
+          }
+          clip.envelope.sort((a, b) => a.timeSec - b.timeSec)
           state.isDirty = true
         }),
 
