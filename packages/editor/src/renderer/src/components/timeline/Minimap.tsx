@@ -10,7 +10,11 @@ const TRACK_HEIGHT = 12
 const PADDING = 4
 const MIN_HEIGHT = 32
 
-export function Minimap(): React.ReactElement {
+interface Props {
+  scrollContainerRef: React.RefObject<HTMLDivElement | null>
+}
+
+export function Minimap({ scrollContainerRef }: Props): React.ReactElement {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const isDraggingRef = useRef(false)
 
@@ -18,7 +22,6 @@ export function Minimap(): React.ReactElement {
   const audioFiles = useProjectStore((s) => s.projectFile.audioFiles)
   const durationSec = useProjectStore((s) => s.projectFile.project.durationSec)
   const scrollLeft = useUiStore((s) => s.scrollLeft)
-  const setScrollLeft = useUiStore((s) => s.setScrollLeft)
   const zoom = useUiStore((s) => s.zoom)
   const viewportWidth = useUiStore((s) => s.timelineViewportWidth)
   const playheadSec = useTransportStore((s) => s.playheadSec)
@@ -151,18 +154,20 @@ export function Minimap(): React.ReactElement {
     ctx.stroke()
   }, [tracks, audioFiles, durationSec, totalDuration, scrollLeft, zoom, viewportWidth, playheadSec, playStartSec, transportState, allPeaks, canvasHeight, dpr])
 
-  // Click/drag to navigate
+  // Click/drag to navigate — scroll the DOM container directly so the
+  // onScroll handler in Timeline naturally syncs to the store
   const navigateTo = useCallback(
     (clientX: number) => {
       const canvas = canvasRef.current
-      if (!canvas) return
+      const container = scrollContainerRef.current
+      if (!canvas || !container) return
       const rect = canvas.getBoundingClientRect()
       const frac = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width))
       const timeSec = frac * totalDuration
-      const targetScrollLeft = timeSec * zoom - viewportWidth / 2
-      setScrollLeft(Math.max(0, targetScrollLeft))
+      const targetScrollLeft = Math.max(0, timeSec * zoom - viewportWidth / 2)
+      container.scrollLeft = targetScrollLeft
     },
-    [totalDuration, zoom, viewportWidth, setScrollLeft]
+    [totalDuration, zoom, viewportWidth, scrollContainerRef]
   )
 
   function handleMouseDown(e: React.MouseEvent): void {

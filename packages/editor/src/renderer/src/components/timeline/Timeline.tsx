@@ -178,7 +178,7 @@ export function Timeline(): React.ReactElement {
           <Playhead totalWidth={totalWidth} rulerHeight={RULER_HEIGHT} />
         </div>
       </div>
-      <Minimap />
+      <Minimap scrollContainerRef={scrollContainerRef} />
     </div>
   )
 }
