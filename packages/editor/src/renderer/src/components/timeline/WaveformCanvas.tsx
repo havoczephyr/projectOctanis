@@ -186,6 +186,9 @@ export function WaveformCanvas({
       ctx.fillStyle = 'rgba(0,255,204,0.3)'
       ctx.font = `10px monospace`
       ctx.fillText('Loading...', 6, height / 2 + 4)
+    } else {
+      // idle or error — clear canvas to avoid stale/broken rendering
+      ctx.clearRect(0, 0, width, height)
     }
   }, [peaks, state, fadeRegions, muteRegions, clipVolume, clipDurationSec, totalDuration, trackColor, width, height, loop])
 

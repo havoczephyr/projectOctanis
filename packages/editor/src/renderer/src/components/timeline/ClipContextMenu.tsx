@@ -20,6 +20,8 @@ export function ClipContextMenu(): React.ReactElement | null {
   const menuRef = useRef<HTMLDivElement>(null)
   const [showLoopInput, setShowLoopInput] = useState(false)
   const [loopCount, setLoopCount] = useState('2')
+  const [showDuckInput, setShowDuckInput] = useState(false)
+  const [duckAmount, setDuckAmount] = useState('70')
 
   // Find the clip and its fade regions
   const tracks = useProjectStore((s) => s.projectFile.project.tracks)
@@ -96,15 +98,17 @@ export function ClipContextMenu(): React.ReactElement | null {
     closeContextMenu()
   }
 
-  function handleDuckSelection(): void {
+  function handleDuckWithAmount(): void {
     if (!rangeSelection || !clip || !track) return
-    // Default duck: 0.3x gain (~-10dB)
+    const pct = parseInt(duckAmount, 10)
+    if (isNaN(pct) || pct < 1 || pct > 99) return
+    const duckGain = clip.volume * (1 - pct / 100)
     createDuckOnTimeline(
       track.id,
       clip.id,
       rangeSelection.startSec,
       rangeSelection.endSec,
-      clip.volume * 0.3,
+      duckGain,
       clip.volume
     )
     clearRangeSelection()
@@ -215,13 +219,35 @@ export function ClipContextMenu(): React.ReactElement | null {
         Mute Selection{!hasRange ? ' (select range first)' : ''}
       </button>
 
-      <button
-        className={styles.item}
-        disabled={!hasRange}
-        onClick={handleDuckSelection}
-      >
-        Duck Selection{!hasRange ? ' (select range first)' : ''}
-      </button>
+      {!showDuckInput ? (
+        <button
+          className={styles.item}
+          disabled={!hasRange}
+          onClick={() => setShowDuckInput(true)}
+        >
+          Duck Selection{!hasRange ? ' (select range first)' : ''}
+        </button>
+      ) : (
+        <div className={styles.loopInputRow}>
+          <span className={styles.loopLabel}>Duck %:</span>
+          <input
+            className={styles.loopInput}
+            type="number"
+            min={1}
+            max={99}
+            value={duckAmount}
+            onChange={(e) => setDuckAmount(e.target.value)}
+            autoFocus
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') handleDuckWithAmount()
+              if (e.key === 'Escape') setShowDuckInput(false)
+            }}
+          />
+          <button className={styles.loopConfirm} onClick={handleDuckWithAmount}>
+            OK
+          </button>
+        </div>
+      )}
 
       {!showLoopInput ? (
         <button
