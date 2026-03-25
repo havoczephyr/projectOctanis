@@ -1,5 +1,10 @@
 import { z } from 'zod'
 
+// ─── Constants ───────────────────────────────────────────────────────────────
+
+/** Tiny normalized x offset for sharp duck edges (used in duck point creation + audio scheduling) */
+export const DUCK_OFFSET = 0.002
+
 // ─── Primitives ───────────────────────────────────────────────────────────────
 
 export const GainControlPointSchema = z.object({
@@ -8,6 +13,8 @@ export const GainControlPointSchema = z.object({
   x: z.number().min(0).max(1),
   /** Gain value at this point (0..2, where 1.0 = original volume) */
   gain: z.number().min(0).max(2),
+  /** Whether this point is part of a duck (sharp gain drop) */
+  duck: z.boolean().optional(),
 })
 export type GainControlPoint = z.infer<typeof GainControlPointSchema>
 
@@ -25,6 +32,15 @@ export const FadeRegionSchema = z.object({
   controlPoints: z.array(GainControlPointSchema),
 })
 export type FadeRegion = z.infer<typeof FadeRegionSchema>
+
+export const MuteRegionSchema = z.object({
+  id: z.string(),
+  /** Start of the mute region, relative to clip start (seconds) */
+  startSec: z.number().min(0),
+  /** End of the mute region, relative to clip start (seconds) */
+  endSec: z.number().min(0),
+})
+export type MuteRegion = z.infer<typeof MuteRegionSchema>
 
 export const LoopRegionSchema = z.object({
   startSec: z.number().min(0),
@@ -59,6 +75,8 @@ export const ClipSchema = z.object({
   volume: z.number().min(0).max(2),
   /** Bounded gain-modification zones (layer masks for gain shaping) */
   fadeRegions: z.array(FadeRegionSchema),
+  /** Mute regions — time ranges where audio is silenced */
+  muteRegions: z.array(MuteRegionSchema),
   loop: LoopRegionSchema.nullable(),
 })
 export type Clip = z.infer<typeof ClipSchema>
@@ -121,6 +139,7 @@ export function defaultClip(audioFileId: string, id: string): Clip {
     trimEndSec: null,
     volume: 1.0,
     fadeRegions: [],
+    muteRegions: [],
     loop: null,
   }
 }
@@ -261,16 +280,27 @@ export function interpolateFadeRegionGain(region: FadeRegion, t: number): number
   return knots[n - 1].y
 }
 
+/** Check if a given clip-relative time falls within any mute region */
+export function isTimeMuted(muteRegions: MuteRegion[], timeSec: number): boolean {
+  for (const r of muteRegions) {
+    if (timeSec >= r.startSec && timeSec <= r.endSec) return true
+  }
+  return false
+}
+
 /**
  * Compute gain from fade regions at a given clip-relative time.
  * Outside all regions returns clipVolume. Inside a region, uses monotone
  * cubic Hermite interpolation through the region's control points.
+ * If muteRegions are provided, returns 0 for muted time ranges.
  */
 export function interpolateFadeRegions(
   regions: FadeRegion[],
   timeSec: number,
-  clipVolume: number
+  clipVolume: number,
+  muteRegions?: MuteRegion[]
 ): number {
+  if (muteRegions && isTimeMuted(muteRegions, timeSec)) return 0
   for (const region of regions) {
     if (timeSec >= region.startSec && timeSec <= region.endSec) {
       const duration = region.endSec - region.startSec

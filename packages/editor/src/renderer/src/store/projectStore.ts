@@ -12,6 +12,7 @@ import {
   type GainControlPoint,
   type LoopRegion,
   type AudioFile,
+  type MuteRegion,
   defaultClip,
   defaultTrack,
   pickTrackColor,
@@ -76,6 +77,10 @@ interface ProjectState {
   addControlPoint: (trackId: string, clipId: string, regionId: string, point: GainControlPoint) => void
   updateControlPoint: (trackId: string, clipId: string, regionId: string, pointId: string, patch: Partial<Omit<GainControlPoint, 'id'>>) => void
   removeControlPoint: (trackId: string, clipId: string, regionId: string, pointId: string) => void
+
+  // Mute regions
+  addMuteRegion: (trackId: string, clipId: string, region: MuteRegion) => void
+  removeMuteRegion: (trackId: string, clipId: string, regionId: string) => void
 
   // Loop
   setLoop: (trackId: string, clipId: string, loop: LoopRegion | null) => void
@@ -336,6 +341,32 @@ export const useProjectStore = create<ProjectState>()(
           if (!region) return
           const idx = region.controlPoints.findIndex((p) => p.id === pointId)
           if (idx !== -1) region.controlPoints.splice(idx, 1)
+          state.isDirty = true
+        }),
+
+      addMuteRegion: (trackId, clipId, region) =>
+        set((state) => {
+          const track = state.projectFile.project.tracks.find((t) => t.id === trackId)
+          const clip = track?.clips.find((c) => c.id === clipId)
+          if (!clip) return
+          const newStart = region.startSec
+          const newEnd = region.endSec
+          for (let i = 0; i < clip.muteRegions.length; i++) {
+            const r = clip.muteRegions[i]
+            if (newStart < r.endSec && newEnd > r.startSec) return
+          }
+          clip.muteRegions.push(region)
+          clip.muteRegions.sort((a, b) => a.startSec - b.startSec)
+          state.isDirty = true
+        }),
+
+      removeMuteRegion: (trackId, clipId, regionId) =>
+        set((state) => {
+          const track = state.projectFile.project.tracks.find((t) => t.id === trackId)
+          const clip = track?.clips.find((c) => c.id === clipId)
+          if (!clip) return
+          const idx = clip.muteRegions.findIndex((r) => r.id === regionId)
+          if (idx !== -1) clip.muteRegions.splice(idx, 1)
           state.isDirty = true
         }),
 

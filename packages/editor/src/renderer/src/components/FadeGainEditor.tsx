@@ -1,9 +1,10 @@
 import React, { useEffect, useRef, useCallback, useState } from 'react'
 import { nanoid } from 'nanoid'
-import { type FadeRegion, interpolateFadeRegionGain } from '@octanis/shared'
+import { type FadeRegion, type GainControlPoint, interpolateFadeRegionGain, DUCK_OFFSET } from '@octanis/shared'
 import { useUiStore } from '../store/uiStore'
 import { useProjectStore } from '../store/projectStore'
 import { usePeaks } from '../hooks/usePeaks'
+import { RubberDucky, duckySvgPaths } from './icons/RubberDucky'
 import type { PeaksResult } from '../../../ipcTypes'
 import styles from './FadeGainEditor.module.css'
 
@@ -18,6 +19,7 @@ const ANCHOR_SIZE = 10
 const POINT_RADIUS = 6
 const GAIN_MIN = 0
 const GAIN_MAX = 2
+const SNAP_THRESHOLD_PX = 8
 
 function gainToY(gain: number): number {
   return CANVAS_H - (gain / GAIN_MAX) * CANVAS_H
@@ -101,10 +103,19 @@ export function FadeGainEditor(): React.ReactElement | null {
   const updateControlPoint = useProjectStore((s) => s.updateControlPoint)
   const removeControlPoint = useProjectStore((s) => s.removeControlPoint)
 
+  const uiIntensity = useUiStore((s) => s.uiIntensity)
+
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [dragTarget, setDragTarget] = useState<DragTarget | null>(null)
   const [localRegion, setLocalRegion] = useState<FadeRegion | null>(null)
   const dragStartRef = useRef<{ y: number; x: number } | null>(null)
+
+  // Duck mode
+  const [duckMode, setDuckMode] = useState(false)
+  const [duckPointA, setDuckPointA] = useState<{ x: number; gain: number } | null>(null)
+
+  // Snap feedback
+  const [snapIndicator, setSnapIndicator] = useState<{ y: number; label: string } | null>(null)
 
   // Resolve track/clip/region from store
   const track = editorState ? tracks.find((t) => t.id === editorState.trackId) : null
@@ -161,84 +172,6 @@ export function FadeGainEditor(): React.ReactElement | null {
     return () => document.removeEventListener('keydown', handleKey)
   }, [editorState, closeFadeGainEditor])
 
-  // ─── Drag handlers ──────────────────────────────────────────────────────────
-
-  const handleDragMove = useCallback((e: MouseEvent) => {
-    if (!dragTarget || !dragStartRef.current || !displayRegion) return
-
-    const dy = e.clientY - dragStartRef.current.y
-    const dx = e.clientX - dragStartRef.current.x
-
-    setLocalRegion((prev) => {
-      const base = prev ?? displayRegion
-      if (dragTarget.type === 'start-anchor') {
-        const newGain = yToGain(gainToY(displayRegion.startGain) + dy)
-        return { ...base, startGain: newGain }
-      }
-      if (dragTarget.type === 'end-anchor') {
-        const newGain = yToGain(gainToY(displayRegion.endGain) + dy)
-        return { ...base, endGain: newGain }
-      }
-      if (dragTarget.type === 'control-point') {
-        const point = base.controlPoints.find((p) => p.id === dragTarget.pointId)
-        if (!point) return base
-        const svgX = point.x * CANVAS_W + dx
-        const svgY = gainToY(point.gain) + dy
-        const newX = xToNormalized(svgX)
-        const newGain = yToGain(svgY)
-        return {
-          ...base,
-          controlPoints: base.controlPoints
-            .map((p) => p.id === dragTarget.pointId ? { ...p, x: newX, gain: newGain } : p)
-            .sort((a, b) => a.x - b.x),
-        }
-      }
-      return base
-    })
-
-    dragStartRef.current = { y: e.clientY, x: e.clientX }
-  }, [dragTarget, displayRegion])
-
-  const handleDragEnd = useCallback(() => {
-    if (!editorState || !localRegion || !dragTarget) {
-      setDragTarget(null)
-      setLocalRegion(null)
-      return
-    }
-
-    // Commit to store
-    if (dragTarget.type === 'start-anchor') {
-      updateFadeRegion(editorState.trackId, editorState.clipId, editorState.regionId, {
-        startGain: localRegion.startGain,
-      })
-    } else if (dragTarget.type === 'end-anchor') {
-      updateFadeRegion(editorState.trackId, editorState.clipId, editorState.regionId, {
-        endGain: localRegion.endGain,
-      })
-    } else if (dragTarget.type === 'control-point') {
-      const point = localRegion.controlPoints.find((p) => p.id === dragTarget.pointId)
-      if (point) {
-        updateControlPoint(editorState.trackId, editorState.clipId, editorState.regionId, dragTarget.pointId, {
-          x: point.x,
-          gain: point.gain,
-        })
-      }
-    }
-
-    setDragTarget(null)
-    setLocalRegion(null)
-  }, [editorState, localRegion, dragTarget, updateFadeRegion, updateControlPoint])
-
-  useEffect(() => {
-    if (!dragTarget) return
-    document.addEventListener('mousemove', handleDragMove)
-    document.addEventListener('mouseup', handleDragEnd)
-    return () => {
-      document.removeEventListener('mousemove', handleDragMove)
-      document.removeEventListener('mouseup', handleDragEnd)
-    }
-  }, [dragTarget, handleDragMove, handleDragEnd])
-
   // ─── Interaction callbacks ──────────────────────────────────────────────────
 
   const startAnchorDrag = useCallback((e: React.MouseEvent, target: DragTarget) => {
@@ -282,6 +215,204 @@ export function FadeGainEditor(): React.ReactElement | null {
     removeControlPoint(editorState.trackId, editorState.clipId, editorState.regionId, pointId)
   }, [editorState, removeControlPoint])
 
+  // ─── Duck mode handlers ───────────────────────────────────────────────────
+
+  const handleSvgClick = useCallback((e: React.MouseEvent<SVGSVGElement>) => {
+    if (!duckMode || !editorState || !region) return
+    if ((e.target as Element).tagName !== 'svg') return
+
+    const rect = e.currentTarget.getBoundingClientRect()
+    const x = e.clientX - rect.left
+    const y = e.clientY - rect.top
+    const normalizedX = xToNormalized(x)
+    const gain = yToGain(y)
+
+    if (!duckPointA) {
+      // First click — store Point A
+      setDuckPointA({ x: normalizedX, gain })
+      return
+    }
+
+    // Second click — create rectangular notch between A and B
+    const ax = Math.min(duckPointA.x, normalizedX)
+    const bx = Math.max(duckPointA.x, normalizedX)
+    const duckGain = duckPointA.x <= normalizedX ? duckPointA.gain : gain
+    if (bx - ax < 0.01) {
+      // Too close together, ignore
+      setDuckPointA(null)
+      return
+    }
+
+    // Get the gain at edges from current curve
+    const gainAtA = interpolateFadeRegionGain(region, ax)
+    const gainAtB = interpolateFadeRegionGain(region, bx)
+
+    // Remove any existing control points between A and B
+    const remainingPoints = region.controlPoints.filter(
+      (p) => p.x < ax - DUCK_OFFSET || p.x > bx + DUCK_OFFSET
+    )
+
+    // Create 4 duck points for the rectangular notch
+    const duckPoints: GainControlPoint[] = [
+      { id: nanoid(), x: ax, gain: gainAtA, duck: true },
+      { id: nanoid(), x: ax + DUCK_OFFSET, gain: duckGain, duck: true },
+      { id: nanoid(), x: bx - DUCK_OFFSET, gain: duckGain, duck: true },
+      { id: nanoid(), x: bx, gain: gainAtB, duck: true },
+    ]
+
+    const newPoints = [...remainingPoints, ...duckPoints].sort((a, b) => a.x - b.x)
+
+    updateFadeRegion(editorState.trackId, editorState.clipId, editorState.regionId, {
+      controlPoints: newPoints,
+    })
+
+    setDuckPointA(null)
+    setDuckMode(false)
+  }, [duckMode, duckPointA, editorState, region, updateFadeRegion])
+
+  const handleRemoveDuckGroup = useCallback((pointId: string) => {
+    if (!editorState || !region) return
+
+    // Find the clicked duck point
+    const clickedIdx = region.controlPoints.findIndex((p) => p.id === pointId)
+    if (clickedIdx === -1) return
+
+    // Collect all contiguous duck points around the clicked one
+    const toRemove = new Set<string>()
+    toRemove.add(region.controlPoints[clickedIdx].id)
+
+    // Expand left
+    for (let i = clickedIdx - 1; i >= 0; i--) {
+      if (region.controlPoints[i].duck) toRemove.add(region.controlPoints[i].id)
+      else break
+    }
+    // Expand right
+    for (let i = clickedIdx + 1; i < region.controlPoints.length; i++) {
+      if (region.controlPoints[i].duck) toRemove.add(region.controlPoints[i].id)
+      else break
+    }
+
+    const newPoints = region.controlPoints.filter((p) => !toRemove.has(p.id))
+    updateFadeRegion(editorState.trackId, editorState.clipId, editorState.regionId, {
+      controlPoints: newPoints,
+    })
+  }, [editorState, region, updateFadeRegion])
+
+  // ─── Snap-aware drag (Y-axis snapping) ────────────────────────────────────
+
+  const getSnapTargets = useCallback((normalizedX: number): number[] => {
+    const targets: number[] = [0, 0.5, 1.0, 1.5, 2.0] // gain grid lines
+    targets.push(clipVolume) // baseline
+
+    // Waveform peak at current x position
+    if (peaks && peaks.count > 0) {
+      const regionDur = displayRegion ? displayRegion.endSec - displayRegion.startSec : 0
+      const timeSec = displayRegion ? displayRegion.startSec + normalizedX * regionDur : 0
+      const clipDur = clipDurationSec || 1
+      const normalizedPos = timeSec / clipDur
+      const peakIdx = Math.min(peaks.count - 1, Math.max(0, Math.floor(normalizedPos * peaks.count)))
+      const peakMax = Math.abs(peaks.max[peakIdx] ?? 0)
+      if (peakMax > 0.01) targets.push(peakMax)
+    }
+
+    return targets
+  }, [clipVolume, peaks, displayRegion, clipDurationSec])
+
+  // Override handleDragMove with snap awareness
+  const handleDragMoveWithSnap = useCallback((e: MouseEvent) => {
+    if (!dragTarget || !dragStartRef.current || !displayRegion) return
+
+    const dy = e.clientY - dragStartRef.current.y
+    const dx = e.clientX - dragStartRef.current.x
+
+    setLocalRegion((prev) => {
+      const base = prev ?? displayRegion
+      if (dragTarget.type === 'start-anchor') {
+        const rawGain = yToGain(gainToY(displayRegion.startGain) + dy)
+        return { ...base, startGain: rawGain }
+      }
+      if (dragTarget.type === 'end-anchor') {
+        const rawGain = yToGain(gainToY(displayRegion.endGain) + dy)
+        return { ...base, endGain: rawGain }
+      }
+      if (dragTarget.type === 'control-point') {
+        const point = base.controlPoints.find((p) => p.id === dragTarget.pointId)
+        if (!point) return base
+        const svgX = point.x * CANVAS_W + dx
+        const svgY = gainToY(point.gain) + dy
+        const newX = xToNormalized(svgX)
+        let newGain = yToGain(svgY)
+
+        // Y-axis snapping
+        const targets = getSnapTargets(newX)
+        let snapped = false
+        for (const target of targets) {
+          const targetY = gainToY(target)
+          const currentY = gainToY(newGain)
+          if (Math.abs(targetY - currentY) < SNAP_THRESHOLD_PX) {
+            newGain = target
+            snapped = true
+            setSnapIndicator({ y: targetY, label: target.toFixed(2) })
+            break
+          }
+        }
+        if (!snapped) setSnapIndicator(null)
+
+        return {
+          ...base,
+          controlPoints: base.controlPoints
+            .map((p) => p.id === dragTarget.pointId ? { ...p, x: newX, gain: newGain } : p)
+            .sort((a, b) => a.x - b.x),
+        }
+      }
+      return base
+    })
+
+    dragStartRef.current = { y: e.clientY, x: e.clientX }
+  }, [dragTarget, displayRegion, getSnapTargets])
+
+  const handleDragEndWithSnap = useCallback(() => {
+    setSnapIndicator(null)
+    if (!editorState || !localRegion || !dragTarget) {
+      setDragTarget(null)
+      setLocalRegion(null)
+      return
+    }
+
+    // Commit to store
+    if (dragTarget.type === 'start-anchor') {
+      updateFadeRegion(editorState.trackId, editorState.clipId, editorState.regionId, {
+        startGain: localRegion.startGain,
+      })
+    } else if (dragTarget.type === 'end-anchor') {
+      updateFadeRegion(editorState.trackId, editorState.clipId, editorState.regionId, {
+        endGain: localRegion.endGain,
+      })
+    } else if (dragTarget.type === 'control-point') {
+      const point = localRegion.controlPoints.find((p) => p.id === dragTarget.pointId)
+      if (point) {
+        updateControlPoint(editorState.trackId, editorState.clipId, editorState.regionId, dragTarget.pointId, {
+          x: point.x,
+          gain: point.gain,
+        })
+      }
+    }
+
+    setDragTarget(null)
+    setLocalRegion(null)
+  }, [editorState, localRegion, dragTarget, updateFadeRegion, updateControlPoint])
+
+  // Register drag listeners
+  useEffect(() => {
+    if (!dragTarget) return
+    document.addEventListener('mousemove', handleDragMoveWithSnap)
+    document.addEventListener('mouseup', handleDragEndWithSnap)
+    return () => {
+      document.removeEventListener('mousemove', handleDragMoveWithSnap)
+      document.removeEventListener('mouseup', handleDragEndWithSnap)
+    }
+  }, [dragTarget, handleDragMoveWithSnap, handleDragEndWithSnap])
+
   // ─── Render ─────────────────────────────────────────────────────────────────
 
   if (!editorState || !displayRegion || !clip || !track) return null
@@ -319,6 +450,8 @@ export function FadeGainEditor(): React.ReactElement | null {
             width={CANVAS_W}
             height={CANVAS_H}
             onContextMenu={handleSvgContextMenu}
+            onClick={handleSvgClick}
+            style={duckMode ? { cursor: 'crosshair' } : undefined}
           >
             {/* Baseline reference — original clip volume */}
             <line
@@ -398,6 +531,25 @@ export function FadeGainEditor(): React.ReactElement | null {
             {displayRegion.controlPoints.map((point) => {
               const cx = point.x * CANVAS_W
               const cy = gainToY(point.gain)
+              const glowRadius = uiIntensity === 'high' ? 8 : uiIntensity === 'balanced' ? 4 : 0
+
+              if (point.duck) {
+                return (
+                  <g
+                    key={point.id}
+                    transform={`translate(${cx}, ${cy})`}
+                    style={glowRadius > 0 ? { filter: `drop-shadow(0 0 ${glowRadius}px ${trackColor})` } : undefined}
+                    className={styles.duckPoint}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      handleRemoveDuckGroup(point.id)
+                    }}
+                  >
+                    {duckySvgPaths(18)}
+                  </g>
+                )
+              }
+
               return (
                 <g
                   key={point.id}
@@ -410,12 +562,49 @@ export function FadeGainEditor(): React.ReactElement | null {
                     cy={cy}
                     r={POINT_RADIUS}
                     fill="white"
-                    stroke={trackColor}
-                    strokeWidth={2}
+                    stroke={snapIndicator && Math.abs(cy - snapIndicator.y) < 1 ? '#ffffff' : trackColor}
+                    strokeWidth={snapIndicator && Math.abs(cy - snapIndicator.y) < 1 ? 3 : 2}
                   />
                 </g>
               )
             })}
+
+            {/* Duck Point A preview marker */}
+            {duckMode && duckPointA && (
+              <g>
+                <line
+                  x1={duckPointA.x * CANVAS_W}
+                  y1={0}
+                  x2={duckPointA.x * CANVAS_W}
+                  y2={CANVAS_H}
+                  stroke={trackColor}
+                  strokeOpacity={0.4}
+                  strokeDasharray="4 3"
+                  strokeWidth={1}
+                />
+                <g
+                  transform={`translate(${duckPointA.x * CANVAS_W}, ${gainToY(duckPointA.gain)})`}
+                  style={{ filter: `drop-shadow(0 0 6px ${trackColor})` }}
+                >
+                  {duckySvgPaths(20)}
+                </g>
+              </g>
+            )}
+
+            {/* Snap indicator line */}
+            {snapIndicator && (
+              <line
+                x1={0}
+                y1={snapIndicator.y}
+                x2={CANVAS_W}
+                y2={snapIndicator.y}
+                stroke="#ffffff"
+                strokeOpacity={0.5}
+                strokeWidth={1}
+                strokeDasharray="2 2"
+                className={styles.snapIndicator}
+              />
+            )}
 
             {/* Gain scale labels */}
             {[0, 0.5, 1.0, 1.5, 2.0].map((g) => (
@@ -440,8 +629,19 @@ export function FadeGainEditor(): React.ReactElement | null {
             Start: {displayRegion.startGain.toFixed(2)} | End: {displayRegion.endGain.toFixed(2)}
           </span>
           <span>
-            {displayRegion.controlPoints.length} control point{displayRegion.controlPoints.length !== 1 ? 's' : ''}
+            {duckMode
+              ? duckPointA
+                ? 'Click point B to complete duck'
+                : 'Click point A to start duck'
+              : `${displayRegion.controlPoints.length} control point${displayRegion.controlPoints.length !== 1 ? 's' : ''}`}
           </span>
+          <button
+            className={`${styles.duckBtn} ${duckMode ? styles.duckBtnActive : ''}`}
+            onClick={() => { setDuckMode(!duckMode); setDuckPointA(null) }}
+            title="Duck mode — click two points for a sharp gain drop"
+          >
+            <RubberDucky size={18} />
+          </button>
         </div>
       </div>
     </>

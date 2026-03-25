@@ -66,6 +66,51 @@
   color: #ff6b6b;
 }
 
+/* ─── Loop Input ────────────────────────────────────────────────────────── */
+.loopInputRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+}
+
+.loopLabel {
+  font-size: 10px;
+  color: #888;
+}
+
+.loopInput {
+  width: 48px;
+  padding: 2px 4px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 3px;
+  color: #ccc;
+  font-family: monospace;
+  font-size: 11px;
+  text-align: center;
+}
+
+.loopInput:focus {
+  outline: none;
+  border-color: #00ffcc;
+}
+
+.loopConfirm {
+  padding: 2px 8px;
+  background: rgba(0, 255, 204, 0.15);
+  border: 1px solid rgba(0, 255, 204, 0.3);
+  border-radius: 3px;
+  color: #00ffcc;
+  font-family: monospace;
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.loopConfirm:hover {
+  background: rgba(0, 255, 204, 0.25);
+}
+
 /* ─── UI Intensity Overrides ─────────────────────────────────────────────── */
 :root[data-ui-intensity="balanced"] .menu {
   backdrop-filter: blur(6px);

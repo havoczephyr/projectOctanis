@@ -31,6 +31,11 @@ interface UiStore {
   zoom: number
   setZoom: (zoom: number) => void
   zoomBy: (delta: number) => void
+  zoomToFit: (viewportWidth: number, durationSec: number) => void
+
+  /** Timeline viewport width for zoom-to-fit calculations */
+  timelineViewportWidth: number
+  setTimelineViewportWidth: (px: number) => void
 
   /** Horizontal scroll offset in pixels */
   scrollLeft: number
@@ -90,6 +95,14 @@ export const useUiStore = create<UiStore>((set) => ({
   setZoom: (zoom) => set({ zoom: Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom)) }),
   zoomBy: (delta) =>
     set((s) => ({ zoom: Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, s.zoom + delta)) })),
+  zoomToFit: (viewportWidth, durationSec) => {
+    if (durationSec <= 0 || viewportWidth <= 0) return
+    const fitZoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, viewportWidth / durationSec))
+    set({ zoom: fitZoom, scrollLeft: 0 })
+  },
+
+  timelineViewportWidth: 0,
+  setTimelineViewportWidth: (px) => set({ timelineViewportWidth: px }),
 
   scrollLeft: 0,
   setScrollLeft: (px) => set({ scrollLeft: Math.max(0, px) }),

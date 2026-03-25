@@ -1,0 +1,16 @@
+.overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+}
+
+.bookmark {
+  pointer-events: auto;
+  cursor: pointer;
+  transition: opacity 150ms ease;
+}
+
+.bookmark:hover {
+  opacity: 1 !important;
+}

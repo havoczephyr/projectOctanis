@@ -71,7 +71,7 @@ export function FileBrowser({ rootPath }: Props): React.ReactElement {
         {rootPath.split('/').pop()}
       </div>
       <div className={styles.list}>
-        {entries.map((entry) => (
+        {entries.filter((e) => e.isDirectory || e.isAudioFile).map((entry) => (
           <FileItem
             key={entry.path}
             entry={entry}

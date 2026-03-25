@@ -1,7 +1,7 @@
 import { useEffect, useRef, useCallback } from 'react'
 import { useTransportStore } from '../store/transportStore'
 import { useProjectStore } from '../store/projectStore'
-import { type OctanisProjectFile, interpolateFadeRegionGain } from '@octanis/shared'
+import { type OctanisProjectFile, interpolateFadeRegionGain, interpolateFadeRegions, isTimeMuted, DUCK_OFFSET } from '@octanis/shared'
 import { pcmToAudioBuffer } from '../utils/pcmToAudioBuffer'
 
 // Cache for decoded AudioBuffers by audioFileId
@@ -97,56 +97,141 @@ export function useAudioEngine(): { analyser: AnalyserNode | undefined } {
         const clipDuration = clip.trimEndSec != null
           ? clip.trimEndSec - clip.trimStartSec
           : audioFile.durationSec
-        const clipEndSec = clip.startSec + clipDuration
+        const loopExtension = clip.loop
+          ? (clip.loop.endSec - clip.loop.startSec) * (typeof clip.loop.count === 'number' ? clip.loop.count : 10)
+          : 0
+        const effectiveDuration = clipDuration + loopExtension
+        const clipEndSec = clip.startSec + effectiveDuration
         if (clipEndSec < fromSec) continue
 
         try {
           const buffer = await getAudioBuffer(ctx, audioFile.absolutePath, clip.audioFileId)
-          const source = ctx.createBufferSource()
-          source.buffer = buffer
+          const baseGainValue = clip.volume * track.volume * masterVolume
 
-          const gainNode = ctx.createGain()
-          gainNode.gain.value = clip.volume * track.volume * masterVolume
-          source.connect(gainNode)
-          gainNode.connect(analyserRef.current ?? ctx.destination)
+          /** Schedule a source segment with its own gain node, applying fade/mute/duck automation */
+          function scheduleSegment(
+            absStartSec: number,
+            bufferOffset: number,
+            segDuration: number,
+            applyAutomation: boolean
+          ): void {
+            if (segDuration <= 0) return
+            const segEndSec = absStartSec + segDuration
+            if (segEndSec < fromSec) return
 
-          // Apply fade regions via multi-point interpolation
-          for (const region of clip.fadeRegions) {
-            const regionDuration = region.endSec - region.startSec
-            if (regionDuration <= 0) continue
+            const source = ctx.createBufferSource()
+            source.buffer = buffer!
 
-            // If playback starts mid-region, inject gain at current time
-            const regionClipStart = clip.startSec + region.startSec
-            const regionClipEnd = clip.startSec + region.endSec
-            if (fromSec > regionClipStart && fromSec < regionClipEnd) {
-              const tAtPlayhead = (fromSec - regionClipStart) / regionDuration
-              const regionGainAtPlayhead = interpolateFadeRegionGain(region, tAtPlayhead)
-              gainNode.gain.setValueAtTime(
-                regionGainAtPlayhead * clip.volume * track.volume * masterVolume,
-                ctx.currentTime
-              )
+            const gainNode = ctx.createGain()
+            gainNode.gain.value = baseGainValue
+            source.connect(gainNode)
+            gainNode.connect(analyserRef.current ?? ctx.destination)
+
+            if (applyAutomation) {
+              // Apply fade regions via multi-point interpolation
+              for (const region of clip.fadeRegions) {
+                const regionDuration = region.endSec - region.startSec
+                if (regionDuration <= 0) continue
+
+                const regionClipStart = clip.startSec + region.startSec
+                const regionClipEnd = clip.startSec + region.endSec
+                if (fromSec > regionClipStart && fromSec < regionClipEnd) {
+                  const tAtPlayhead = (fromSec - regionClipStart) / regionDuration
+                  const regionGainAtPlayhead = interpolateFadeRegionGain(region, tAtPlayhead)
+                  gainNode.gain.setValueAtTime(
+                    regionGainAtPlayhead * clip.volume * track.volume * masterVolume,
+                    ctx.currentTime
+                  )
+                }
+
+                const steps = Math.max(10, Math.ceil(regionDuration * 50))
+                for (let i = 0; i <= steps; i++) {
+                  const t = i / steps
+                  const isDuckNeighbor = region.controlPoints.some(
+                    (cp) => cp.duck && Math.abs(t - cp.x) < DUCK_OFFSET * 2
+                  )
+                  if (isDuckNeighbor) continue
+
+                  const timeSec = region.startSec + t * regionDuration
+                  const absTime = ctx.currentTime + (clip.startSec + timeSec - fromSec)
+                  if (absTime < ctx.currentTime) continue
+                  const regionGain = interpolateFadeRegionGain(region, t)
+                  gainNode.gain.setValueAtTime(regionGain * clip.volume * track.volume * masterVolume, absTime)
+                }
+
+                for (const cp of region.controlPoints) {
+                  if (!cp.duck) continue
+                  const cpTimeSec = region.startSec + cp.x * regionDuration
+                  const cpAbsTime = ctx.currentTime + (clip.startSec + cpTimeSec - fromSec)
+                  if (cpAbsTime < ctx.currentTime) continue
+                  gainNode.gain.setValueAtTime(cp.gain * clip.volume * track.volume * masterVolume, cpAbsTime)
+                }
+              }
+
+              // Apply mute regions
+              if (isTimeMuted(clip.muteRegions, Math.max(0, fromSec - clip.startSec))) {
+                gainNode.gain.setValueAtTime(0, ctx.currentTime)
+              }
+              for (const muteRegion of clip.muteRegions) {
+                const muteStartAbs = ctx.currentTime + (clip.startSec + muteRegion.startSec - fromSec)
+                const muteEndAbs = ctx.currentTime + (clip.startSec + muteRegion.endSec - fromSec)
+                if (muteEndAbs < ctx.currentTime) continue
+                gainNode.gain.setValueAtTime(0, Math.max(ctx.currentTime, muteStartAbs))
+                if (muteEndAbs >= ctx.currentTime) {
+                  const restoreGain = interpolateFadeRegions(
+                    clip.fadeRegions, muteRegion.endSec, clip.volume
+                  ) * track.volume * masterVolume
+                  gainNode.gain.setValueAtTime(restoreGain, muteEndAbs)
+                }
+              }
             }
 
-            const steps = Math.max(10, Math.ceil(regionDuration * 50))
-            for (let i = 0; i <= steps; i++) {
-              const t = i / steps
-              const timeSec = region.startSec + t * regionDuration
-              const absTime = ctx.currentTime + (clip.startSec + timeSec - fromSec)
-              if (absTime < ctx.currentTime) continue
-              const regionGain = interpolateFadeRegionGain(region, t)
-              const gain = regionGain * clip.volume * track.volume * masterVolume
-              gainNode.gain.setValueAtTime(gain, absTime)
+            const when = Math.max(0, ctx.currentTime + absStartSec - fromSec)
+            const skipInto = Math.max(0, fromSec - absStartSec)
+            const playOffset = bufferOffset + skipInto
+            const playDuration = segDuration - skipInto
+
+            if (playDuration > 0) {
+              source.start(when, playOffset, playDuration)
+              sourcesRef.current.push(source)
             }
           }
 
-          // Schedule the clip
-          const when = Math.max(0, ctx.currentTime + clip.startSec - fromSec)
-          const offset = clip.trimStartSec + Math.max(0, fromSec - clip.startSec)
-          const duration = clipDuration - Math.max(0, fromSec - clip.startSec)
+          if (clip.loop) {
+            // ─── 3-segment in-place loop model ─────────────────────────
+            const loopDur = clip.loop.endSec - clip.loop.startSec
+            const loopCount = typeof clip.loop.count === 'number' ? clip.loop.count : 10
 
-          console.debug('[Octanis:Audio] scheduling clip', { clipId: clip.id, audioFileId: clip.audioFileId, when, offset, duration, startSec: clip.startSec })
-          source.start(when, offset, duration)
-          sourcesRef.current.push(source)
+            console.debug('[Octanis:Audio] scheduling looped clip', {
+              clipId: clip.id, clipDuration, loopStart: clip.loop.startSec,
+              loopEnd: clip.loop.endSec, loopDur, loopCount, effectiveDuration,
+            })
+
+            // Segment 1: pre-loop + first pass of loop section (0 to loop.endSec)
+            const seg1AbsStart = clip.startSec
+            const seg1BufOffset = clip.trimStartSec
+            const seg1Duration = clip.loop.endSec
+            scheduleSegment(seg1AbsStart, seg1BufOffset, seg1Duration, true)
+
+            // Segment 2: loop repeats (count times, in-place after first pass)
+            for (let li = 0; li < loopCount; li++) {
+              const repAbsStart = clip.startSec + clip.loop.endSec + li * loopDur
+              const repBufOffset = clip.trimStartSec + clip.loop.startSec
+              scheduleSegment(repAbsStart, repBufOffset, loopDur, false)
+            }
+
+            // Segment 3: post-loop remainder (loop.endSec to clipDuration, shifted right)
+            const remainderClipTime = clipDuration - clip.loop.endSec
+            if (remainderClipTime > 0) {
+              const seg3AbsStart = clip.startSec + clip.loop.endSec + loopCount * loopDur
+              const seg3BufOffset = clip.trimStartSec + clip.loop.endSec
+              scheduleSegment(seg3AbsStart, seg3BufOffset, remainderClipTime, false)
+            }
+          } else {
+            // ─── No loop — single source, full duration ───────────────
+            scheduleSegment(clip.startSec, clip.trimStartSec, clipDuration, true)
+            console.debug('[Octanis:Audio] scheduling clip', { clipId: clip.id, audioFileId: clip.audioFileId, clipDuration, startSec: clip.startSec })
+          }
         } catch (err) {
           console.error('[Octanis:Audio] failed to schedule clip', { clipId: clip.id, err })
         }

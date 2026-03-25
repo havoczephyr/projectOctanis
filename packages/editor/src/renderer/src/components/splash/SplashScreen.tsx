@@ -74,7 +74,7 @@ export function SplashScreen(): React.ReactElement {
         <div className={styles.header}>
           <div className={styles.title}>OCTANIS</div>
           <div className={styles.subtitle}>audio production environment</div>
-          <div className={styles.version}>v1.0.0</div>
+          <div className={styles.version}>v0.3.0</div>
         </div>
 
         {/* New Project Form or Action Buttons */}

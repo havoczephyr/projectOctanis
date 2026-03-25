@@ -75,7 +75,7 @@ export function registerFileHandlers(): void {
       filters: [
         {
           name: 'Audio Files',
-          extensions: ['mp3', 'wav', 'flac', 'ogg', 'aac', 'm4a', 'opus'],
+          extensions: ['mp3', 'wav', 'flac', 'ogg', 'aac', 'm4a', 'opus', 'wma'],
         },
         { name: 'All Files', extensions: ['*'] },
       ],

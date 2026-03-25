@@ -1,4 +1,4 @@
-import React, { useRef, useCallback } from 'react'
+import React, { useRef, useCallback, useEffect } from 'react'
 import { TimelineRuler } from './TimelineRuler'
 import { TrackLane } from './TrackLane'
 import { TrackHeader } from './TrackHeader'
@@ -23,7 +23,19 @@ export function Timeline(): React.ReactElement {
   const { timeToPixel, pixelToTime } = useTimeToPixel()
 
   const scrollContainerRef = useRef<HTMLDivElement>(null)
+  const setTimelineViewportWidth = useUiStore((s) => s.setTimelineViewportWidth)
   const totalWidth = Math.max(timeToPixel(durationSec), 2000)
+
+  // Track viewport width for zoom-to-fit
+  useEffect(() => {
+    const container = scrollContainerRef.current
+    if (!container) return
+    const update = (): void => setTimelineViewportWidth(container.clientWidth)
+    update()
+    const observer = new ResizeObserver(update)
+    observer.observe(container)
+    return () => observer.disconnect()
+  }, [setTimelineViewportWidth])
 
   // Sync horizontal scroll
   function handleScroll(e: React.UIEvent<HTMLDivElement>): void {

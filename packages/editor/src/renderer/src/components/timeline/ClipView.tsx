@@ -2,6 +2,7 @@ import React from 'react'
 import type { Track, Clip } from '@octanis/shared'
 import { WaveformCanvas } from './WaveformCanvas'
 import { FadeRegionOverlay } from './FadeRegionOverlay'
+import { MuteRegionOverlay } from './MuteRegionOverlay'
 import { LoopRegion } from './LoopRegion'
 import { useTimeToPixel } from '../../hooks/useTimeToPixel'
 import { useClipDrag } from '../../hooks/useClipDrag'
@@ -27,12 +28,18 @@ export function ClipView({ track, clip, laneHeight }: Props): React.ReactElement
       ? clip.trimEndSec - clip.trimStartSec
       : audioFile?.durationSec ?? 30
 
+  // Loop extension: add duration for repeated sections
+  const loopExtra = clip.loop
+    ? (clip.loop.endSec - clip.loop.startSec) * (typeof clip.loop.count === 'number' ? clip.loop.count : 10)
+    : 0
+  const effectiveDuration = clipDurationSec + loopExtra
+
   const { onMouseDown, dragOffsetSec, isDragging, isRangeSelecting } = useClipDrag(
-    track.id, clip.id, clip.startSec, clipDurationSec
+    track.id, clip.id, clip.startSec, effectiveDuration
   )
 
   const clipX = timeToPixel(Math.max(0, clip.startSec + dragOffsetSec))
-  const clipWidth = Math.max(4, timeToPixel(clipDurationSec))
+  const clipWidth = Math.max(4, timeToPixel(effectiveDuration))
   const isSelected = selectedClipIds.includes(clip.id)
 
   // Range selection highlight for this clip
@@ -75,12 +82,15 @@ export function ClipView({ track, clip, laneHeight }: Props): React.ReactElement
       <WaveformCanvas
         audioFileId={clip.audioFileId}
         clipDurationSec={clipDurationSec}
+        effectiveDuration={effectiveDuration}
         trimStartSec={clip.trimStartSec}
         fadeRegions={clip.fadeRegions}
+        muteRegions={clip.muteRegions}
         clipVolume={clip.volume}
         trackColor={track.color}
         width={clipWidth}
         height={laneHeight}
+        loop={clip.loop}
       />
 
       {/* Loop region */}
@@ -88,23 +98,34 @@ export function ClipView({ track, clip, laneHeight }: Props): React.ReactElement
         <LoopRegion
           trackId={track.id}
           clip={clip}
+          clipDurationSec={clipDurationSec}
           height={laneHeight}
           trackColor={track.color}
         />
       )}
 
-      {/* Fade region overlay (only when single-selected) */}
+      {/* Region overlays (only when single-selected) */}
       {isSelected && selectedClipIds.length === 1 && (
-        <FadeRegionOverlay
-          trackId={track.id}
-          clipId={clip.id}
-          fadeRegions={clip.fadeRegions}
-          clipDurationSec={clipDurationSec}
-          clipVolume={clip.volume}
-          width={clipWidth}
-          height={laneHeight}
-          trackColor={track.color}
-        />
+        <>
+          <MuteRegionOverlay
+            trackId={track.id}
+            clipId={clip.id}
+            muteRegions={clip.muteRegions}
+            clipDurationSec={clipDurationSec}
+            width={clipWidth}
+            height={laneHeight}
+          />
+          <FadeRegionOverlay
+            trackId={track.id}
+            clipId={clip.id}
+            fadeRegions={clip.fadeRegions}
+            clipDurationSec={clipDurationSec}
+            clipVolume={clip.volume}
+            width={clipWidth}
+            height={laneHeight}
+            trackColor={track.color}
+          />
+        </>
       )}
 
       {/* Range selection highlight */}

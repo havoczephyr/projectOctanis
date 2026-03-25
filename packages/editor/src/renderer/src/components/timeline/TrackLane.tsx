@@ -14,9 +14,22 @@ interface Props {
 
 export function TrackLane({ track, height, onDrop }: Props): React.ReactElement {
   const durationSec = useProjectStore((s) => s.projectFile.project.durationSec)
+  const audioFiles = useProjectStore((s) => s.projectFile.audioFiles)
   const deselectAll = useUiStore((s) => s.deselectAll)
   const { timeToPixel } = useTimeToPixel()
-  const totalWidth = Math.max(timeToPixel(durationSec), 2000)
+
+  // Account for loop extensions when computing lane width
+  let maxClipEnd = 0
+  for (const clip of track.clips) {
+    const af = audioFiles[clip.audioFileId]
+    if (!af) continue
+    const clipDur = clip.trimEndSec != null ? clip.trimEndSec - clip.trimStartSec : af.durationSec
+    const loopExtra = clip.loop
+      ? (clip.loop.endSec - clip.loop.startSec) * (typeof clip.loop.count === 'number' ? clip.loop.count : 10)
+      : 0
+    maxClipEnd = Math.max(maxClipEnd, clip.startSec + clipDur + loopExtra)
+  }
+  const totalWidth = Math.max(timeToPixel(Math.max(durationSec, maxClipEnd)), 2000)
 
   function handleClick(e: React.MouseEvent): void {
     // Deselect if clicking the lane or its bg, not a clip

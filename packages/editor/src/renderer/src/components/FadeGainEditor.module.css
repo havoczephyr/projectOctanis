@@ -117,3 +117,41 @@
   backdrop-filter: none;
   background: rgba(20, 20, 30, 0.98);
 }
+
+/* ─── Duck Mode ────────────────────────────────────────────────────────── */
+.duckBtn {
+  background: none;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 32px;
+  min-height: 28px;
+  padding: 4px 10px;
+  cursor: pointer;
+  transition: border-color var(--transition-fast), background var(--transition-fast);
+}
+
+.duckBtn:hover {
+  border-color: var(--border);
+}
+
+.duckBtnActive {
+  border-color: var(--accent-cyan);
+  background: rgba(0, 255, 204, 0.1);
+}
+
+.duckPoint {
+  cursor: pointer;
+  user-select: none;
+}
+
+.duckPoint:hover {
+  transform: scale(1.15);
+}
+
+/* ─── Snap Indicator ──────────────────────────────────────────────────── */
+.snapIndicator {
+  pointer-events: none;
+}

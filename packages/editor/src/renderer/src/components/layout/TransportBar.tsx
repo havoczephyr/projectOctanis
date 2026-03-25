@@ -14,6 +14,12 @@ export function TransportBar(): React.ReactElement {
   const toggleSnapping = useUiStore((s) => s.toggleSnapping)
   const zoom = useUiStore((s) => s.zoom)
   const zoomBy = useUiStore((s) => s.zoomBy)
+  const durationSec = useProjectStore((s) => s.projectFile.project.durationSec)
+
+  function handleZoomToFit(): void {
+    const { timelineViewportWidth } = useUiStore.getState()
+    useUiStore.getState().zoomToFit(timelineViewportWidth, durationSec)
+  }
 
   return (
     <div className={`${styles.bar} panel`}>
@@ -48,8 +54,9 @@ export function TransportBar(): React.ReactElement {
         <label className={styles.label}>ZOOM</label>
         <div className={styles.zoomControls}>
           <button className="btn btn--icon" onClick={() => zoomBy(-20)}>−</button>
-          <span className={styles.zoomValue}>{zoom}px/s</span>
+          <span className={styles.zoomValue}>{Math.round(zoom)}px/s</span>
           <button className="btn btn--icon" onClick={() => zoomBy(20)}>+</button>
+          <button className="btn btn--icon" onClick={handleZoomToFit} title="Zoom to fit (Cmd+0)">FIT</button>
         </div>
       </div>
 

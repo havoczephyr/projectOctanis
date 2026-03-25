@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { nanoid } from 'nanoid'
 import { useUiStore } from '../../store/uiStore'
 import { useProjectStore } from '../../store/projectStore'
@@ -11,10 +11,14 @@ export function ClipContextMenu(): React.ReactElement | null {
   const clearRangeSelection = useUiStore((s) => s.clearRangeSelection)
   const openFadeGainEditor = useUiStore((s) => s.openFadeGainEditor)
   const addFadeRegion = useProjectStore((s) => s.addFadeRegion)
+  const addMuteRegion = useProjectStore((s) => s.addMuteRegion)
+  const setLoop = useProjectStore((s) => s.setLoop)
   const removeClip = useProjectStore((s) => s.removeClip)
   const moveClip = useProjectStore((s) => s.moveClip)
   const setRangeSelection = useUiStore((s) => s.setRangeSelection)
   const menuRef = useRef<HTMLDivElement>(null)
+  const [showLoopInput, setShowLoopInput] = useState(false)
+  const [loopCount, setLoopCount] = useState('2')
 
   // Find the clip and its fade regions
   const tracks = useProjectStore((s) => s.projectFile.project.tracks)
@@ -76,6 +80,43 @@ export function ClipContextMenu(): React.ReactElement | null {
     })
     openFadeGainEditor(track.id, clip.id, regionId)
     clearRangeSelection()
+    closeContextMenu()
+  }
+
+  function handleMuteSelection(): void {
+    if (!rangeSelection || !clip || !track) return
+    const regionId = nanoid()
+    addMuteRegion(track.id, clip.id, {
+      id: regionId,
+      startSec: rangeSelection.startSec,
+      endSec: rangeSelection.endSec,
+    })
+    clearRangeSelection()
+    closeContextMenu()
+  }
+
+  function handleLoopSelection(): void {
+    if (!rangeSelection || !clip || !track) return
+    const count = loopCount === 'infinite' ? 'infinite' as const : parseInt(loopCount, 10)
+    if (typeof count === 'number' && (isNaN(count) || count < 1)) return
+    setLoop(track.id, clip.id, {
+      startSec: rangeSelection.startSec,
+      endSec: rangeSelection.endSec,
+      count,
+    })
+    clearRangeSelection()
+    closeContextMenu()
+  }
+
+  function handleRemoveLoop(): void {
+    if (!clip || !track) return
+    setLoop(track.id, clip.id, null)
+    closeContextMenu()
+  }
+
+  function handleDeleteMuteRegion(regionId: string): void {
+    if (!clip || !track) return
+    useProjectStore.getState().removeMuteRegion(track.id, clip.id, regionId)
     closeContextMenu()
   }
 
@@ -152,6 +193,44 @@ export function ClipContextMenu(): React.ReactElement | null {
 
       <button
         className={styles.item}
+        disabled={!hasRange}
+        onClick={handleMuteSelection}
+      >
+        Mute Selection{!hasRange ? ' (select range first)' : ''}
+      </button>
+
+      {!showLoopInput ? (
+        <button
+          className={styles.item}
+          disabled={!hasRange}
+          onClick={() => setShowLoopInput(true)}
+        >
+          Loop Selection{!hasRange ? ' (select range first)' : ''}
+        </button>
+      ) : (
+        <div className={styles.loopInputRow}>
+          <span className={styles.loopLabel}>Repeats:</span>
+          <input
+            className={styles.loopInput}
+            type="number"
+            min={1}
+            max={99}
+            value={loopCount}
+            onChange={(e) => setLoopCount(e.target.value)}
+            autoFocus
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') handleLoopSelection()
+              if (e.key === 'Escape') setShowLoopInput(false)
+            }}
+          />
+          <button className={styles.loopConfirm} onClick={handleLoopSelection}>
+            OK
+          </button>
+        </div>
+      )}
+
+      <button
+        className={styles.item}
         disabled={hasFullClipOverlap}
         onClick={handleFadeEntireClip}
       >
@@ -197,6 +276,36 @@ export function ClipContextMenu(): React.ReactElement | null {
                 Delete Region #{i + 1}
               </button>
             </React.Fragment>
+          ))}
+        </>
+      )}
+
+      {/* Loop */}
+      {clip.loop && (
+        <>
+          <div className={styles.separator} />
+          <div className={styles.sectionLabel}>
+            Loop ({typeof clip.loop.count === 'number' ? `${clip.loop.count}x` : 'infinite'})
+          </div>
+          <button className={styles.destructive} onClick={handleRemoveLoop}>
+            Remove Loop
+          </button>
+        </>
+      )}
+
+      {/* Existing mute regions */}
+      {clip.muteRegions.length > 0 && (
+        <>
+          <div className={styles.separator} />
+          <div className={styles.sectionLabel}>Mute Regions</div>
+          {clip.muteRegions.map((region, i) => (
+            <button
+              key={region.id}
+              className={styles.destructive}
+              onClick={() => handleDeleteMuteRegion(region.id)}
+            >
+              Delete Mute #{i + 1}
+            </button>
           ))}
         </>
       )}
