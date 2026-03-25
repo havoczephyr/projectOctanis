@@ -1,5 +1,6 @@
 import React from 'react'
 import { FileBrowser } from '../fileBrowser/FileBrowser'
+import { ImportedFilesList } from '../fileBrowser/ImportedFilesList'
 import { useUiStore } from '../../store/uiStore'
 import { useProjectStore } from '../../store/projectStore'
 import styles from './Sidebar.module.css'
@@ -7,6 +8,8 @@ import styles from './Sidebar.module.css'
 export function Sidebar(): React.ReactElement {
   const folder = useUiStore((s) => s.sidebarFolder)
   const setSidebarFolder = useUiStore((s) => s.setSidebarFolder)
+  const audioFiles = useProjectStore((s) => s.projectFile.audioFiles)
+  const hasImportedFiles = Object.keys(audioFiles).length > 0
 
   async function handleOpenFolder(): Promise<void> {
     const path = await window.octanis.file.openFolder()
@@ -24,9 +27,6 @@ export function Sidebar(): React.ReactElement {
         console.error('[Octanis] Failed to import audio file', sourcePath, err)
       }
     }
-    // Navigate sidebar to the folder containing the imported files
-    const folder = files[0].substring(0, files[0].lastIndexOf('/'))
-    setSidebarFolder(folder)
   }
 
   return (
@@ -43,14 +43,26 @@ export function Sidebar(): React.ReactElement {
         </div>
       </div>
 
+      {/* Imported audio files — persistent across folder changes */}
+      {hasImportedFiles && (
+        <>
+          <div className={styles.sectionHeader}>IMPORTED</div>
+          <ImportedFilesList />
+        </>
+      )}
+
+      {/* Filesystem browser */}
       {folder ? (
-        <FileBrowser rootPath={folder} />
-      ) : (
+        <>
+          {hasImportedFiles && <div className={styles.sectionHeader}>BROWSE</div>}
+          <FileBrowser rootPath={folder} />
+        </>
+      ) : !hasImportedFiles ? (
         <div className={styles.empty}>
           <div className={styles.emptyIcon}>♪</div>
           <div className={styles.emptyText}>Open a folder to browse audio files</div>
         </div>
-      )}
+      ) : null}
     </div>
   )
 }

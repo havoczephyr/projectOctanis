@@ -51,6 +51,7 @@ interface ProjectState {
 
   // Audio file registry
   addAudioFile: (file: AudioFile) => void
+  removeAudioFile: (audioFileId: string) => void
   updateAudioFilePath: (audioFileId: string, newPath: string) => void
 
   // Track operations
@@ -143,6 +144,15 @@ export const useProjectStore = create<ProjectState>()(
         set((state) => {
           console.debug('[Octanis:DnD] addAudioFile', { id: file.id, path: file.absolutePath, durationSec: file.durationSec })
           state.projectFile.audioFiles[file.id] = file
+          state.isDirty = true
+        }),
+
+      removeAudioFile: (audioFileId) =>
+        set((state) => {
+          delete state.projectFile.audioFiles[audioFileId]
+          for (const track of state.projectFile.project.tracks) {
+            track.clips = track.clips.filter((c) => c.audioFileId !== audioFileId)
+          }
           state.isDirty = true
         }),
 

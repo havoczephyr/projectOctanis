@@ -27,6 +27,15 @@
   color: var(--text-dim);
 }
 
+.sectionHeader {
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  color: var(--text-dim);
+  padding: 6px 10px 2px;
+  opacity: 0.6;
+  flex-shrink: 0;
+}
+
 .empty {
   flex: 1;
   display: flex;
