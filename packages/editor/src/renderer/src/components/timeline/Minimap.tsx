@@ -17,6 +17,7 @@ interface Props {
 export function Minimap({ scrollContainerRef }: Props): React.ReactElement {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const isDraggingRef = useRef(false)
+  const lastDrawTimeRef = useRef(0)
 
   const tracks = useProjectStore((s) => s.projectFile.project.tracks)
   const audioFiles = useProjectStore((s) => s.projectFile.audioFiles)
@@ -49,6 +50,13 @@ export function Minimap({ scrollContainerRef }: Props): React.ReactElement {
 
   // Draw minimap
   useEffect(() => {
+    // Throttle redraws during playback to ~10fps
+    if (transportState === 'playing') {
+      const now = performance.now()
+      if (now - lastDrawTimeRef.current < 100) return
+      lastDrawTimeRef.current = now
+    }
+
     const canvas = canvasRef.current
     if (!canvas) return
     const ctx = canvas.getContext('2d')

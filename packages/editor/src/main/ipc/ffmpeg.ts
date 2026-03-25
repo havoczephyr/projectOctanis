@@ -2,6 +2,7 @@ import { ipcMain } from 'electron'
 import { extractPeaks, type PeakOpts, type PeaksResult } from '../ffmpeg/peaks'
 import { inspectAudio } from '../ffmpeg/inspect'
 import { decodeAudioFile } from '../ffmpeg/decode'
+import { encodeAudio } from '../ffmpeg/encode'
 import type { AudioFile } from '@octanis/shared'
 import type { DecodeAudioResult } from '../../ipcTypes'
 import log from 'electron-log'
@@ -59,6 +60,28 @@ export function registerFfmpegHandlers(): void {
         }
       } catch (err) {
         log.error('ffmpeg:decodeAudioFile error', err)
+        throw err
+      }
+    }
+  )
+
+  ipcMain.handle(
+    'ffmpeg:encodeAudio',
+    async (
+      _event,
+      webmData: ArrayBuffer,
+      outputPath: string,
+      format: string
+    ): Promise<AudioFile> => {
+      try {
+        await encodeAudio(
+          Buffer.from(webmData),
+          outputPath,
+          format as 'wav' | 'mp3' | 'flac' | 'm4a'
+        )
+        return await inspectAudio(outputPath)
+      } catch (err) {
+        log.error('ffmpeg:encodeAudio error', err)
         throw err
       }
     }

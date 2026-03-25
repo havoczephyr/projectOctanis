@@ -50,7 +50,7 @@ export function useAudioEngine(): { analyser: AnalyserNode | undefined } {
 
   function getCtx(): AudioContext {
     if (!ctxRef.current) {
-      ctxRef.current = new AudioContext()
+      ctxRef.current = new AudioContext({ latencyHint: 'playback' })
       console.debug('[Octanis:Audio] AudioContext created', { sampleRate: ctxRef.current.sampleRate, state: ctxRef.current.state })
       const analyser = ctxRef.current.createAnalyser()
       analyser.fftSize = 256

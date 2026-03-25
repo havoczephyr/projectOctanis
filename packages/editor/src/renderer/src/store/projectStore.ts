@@ -270,14 +270,22 @@ export const useProjectStore = create<ProjectState>()(
           const track = state.projectFile.project.tracks.find((t) => t.id === trackId)
           const clip = track?.clips.find((c) => c.id === clipId)
           if (!clip) return
-          // Reject if overlapping an existing region
-          const newStart = region.startSec
-          const newEnd = region.endSec
-          for (let i = 0; i < clip.fadeRegions.length; i++) {
-            const r = clip.fadeRegions[i]
-            if (newStart < r.endSec && newEnd > r.startSec) return
+
+          // Snap to existing regions instead of rejecting overlaps
+          let { startSec, endSec } = region
+          for (const r of clip.fadeRegions) {
+            if (startSec < r.endSec && startSec >= r.startSec) {
+              startSec = r.endSec
+            }
+            if (endSec > r.startSec && endSec <= r.endSec) {
+              endSec = r.startSec
+            }
+            // New region fully engulfs existing — reject (too ambiguous)
+            if (startSec <= r.startSec && endSec >= r.endSec) return
           }
-          clip.fadeRegions.push(region)
+          if (endSec - startSec < 0.01) return
+
+          clip.fadeRegions.push({ ...region, startSec, endSec })
           clip.fadeRegions.sort((a, b) => a.startSec - b.startSec)
           state.isDirty = true
         }),
@@ -349,13 +357,22 @@ export const useProjectStore = create<ProjectState>()(
           const track = state.projectFile.project.tracks.find((t) => t.id === trackId)
           const clip = track?.clips.find((c) => c.id === clipId)
           if (!clip) return
-          const newStart = region.startSec
-          const newEnd = region.endSec
-          for (let i = 0; i < clip.muteRegions.length; i++) {
-            const r = clip.muteRegions[i]
-            if (newStart < r.endSec && newEnd > r.startSec) return
+
+          // Snap to existing regions instead of rejecting overlaps
+          let { startSec, endSec } = region
+          for (const r of clip.muteRegions) {
+            if (startSec < r.endSec && startSec >= r.startSec) {
+              startSec = r.endSec
+            }
+            if (endSec > r.startSec && endSec <= r.endSec) {
+              endSec = r.startSec
+            }
+            // New region fully engulfs existing — reject (too ambiguous)
+            if (startSec <= r.startSec && endSec >= r.endSec) return
           }
-          clip.muteRegions.push(region)
+          if (endSec - startSec < 0.01) return
+
+          clip.muteRegions.push({ ...region, startSec, endSec })
           clip.muteRegions.sort((a, b) => a.startSec - b.startSec)
           state.isDirty = true
         }),

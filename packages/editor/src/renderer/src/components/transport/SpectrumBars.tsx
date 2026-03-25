@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from 'react'
 import { useTransportStore } from '../../store/transportStore'
+import { useUiStore } from '../../store/uiStore'
 import styles from './SpectrumBars.module.css'
 
 const BAR_COUNT = 24
@@ -19,29 +20,38 @@ export function SpectrumBars({
 }): React.ReactElement {
   const barsRef = useRef<(HTMLDivElement | null)[]>([])
   const rafRef = useRef<number | undefined>(undefined)
+  const frameCountRef = useRef(0)
   const isPlaying = useTransportStore((s) => s.state === 'playing')
+  const uiIntensity = useUiStore((s) => s.uiIntensity)
 
   useEffect(() => {
     const dataArray = analyser ? new Uint8Array(analyser.frequencyBinCount) : null
 
     function tick(t: number): void {
+      frameCountRef.current++
+      const shouldUpdate = uiIntensity !== 'low' || frameCountRef.current % 3 === 0
+
       if (analyser && dataArray) {
-        analyser.getByteFrequencyData(dataArray)
-        const step = Math.floor(dataArray.length / BAR_COUNT)
-        barsRef.current.forEach((bar, i) => {
-          if (!bar) return
-          const val = dataArray[i * step] / 255
-          bar.style.height = `${Math.max(6, val * 100)}%`
-        })
+        if (shouldUpdate) {
+          analyser.getByteFrequencyData(dataArray)
+          const step = Math.floor(dataArray.length / BAR_COUNT)
+          barsRef.current.forEach((bar, i) => {
+            if (!bar) return
+            const val = dataArray[i * step] / 255
+            bar.style.height = `${Math.max(6, val * 100)}%`
+          })
+        }
       } else {
-        // Idle animation
-        const tSec = t / 1000
-        barsRef.current.forEach((bar, i) => {
-          if (!bar) return
-          const p = IDLE_PATTERNS[i]
-          const h = p.base + p.amp * Math.sin(tSec * p.freq + p.phase)
-          bar.style.height = `${Math.max(4, h)}%`
-        })
+        if (shouldUpdate) {
+          // Idle animation
+          const tSec = t / 1000
+          barsRef.current.forEach((bar, i) => {
+            if (!bar) return
+            const p = IDLE_PATTERNS[i]
+            const h = p.base + p.amp * Math.sin(tSec * p.freq + p.phase)
+            bar.style.height = `${Math.max(4, h)}%`
+          })
+        }
       }
       rafRef.current = requestAnimationFrame(tick)
     }
@@ -50,7 +60,7 @@ export function SpectrumBars({
     return () => {
       if (rafRef.current) cancelAnimationFrame(rafRef.current)
     }
-  }, [analyser, isPlaying])
+  }, [analyser, isPlaying, uiIntensity])
 
   return (
     <div className={styles.container}>

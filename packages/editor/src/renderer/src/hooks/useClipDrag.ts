@@ -3,6 +3,8 @@ import { useProjectStore } from '../store/projectStore'
 import { useUiStore } from '../store/uiStore'
 import { useTransportStore } from '../store/transportStore'
 import { useTimeToPixel } from './useTimeToPixel'
+import { TRACK_HEIGHT } from '../constants'
+import { findClipCollision, snapToAdjacentClip } from '../utils/clipCollision'
 
 /** Pure function for testability */
 export function computeDragOffset(startX: number, currentX: number, zoom: number): number {
@@ -20,6 +22,7 @@ interface ClipDragState {
   dragOffsetSec: number
   isDragging: boolean
   isRangeSelecting: boolean
+  dragTrackOffset: number
 }
 
 export function useClipDrag(
@@ -29,6 +32,7 @@ export function useClipDrag(
   clipDurationSec: number
 ): ClipDragState {
   const moveClip = useProjectStore((s) => s.moveClip)
+  const moveClipToTrack = useProjectStore((s) => s.moveClipToTrack)
   const selectClip = useUiStore((s) => s.selectClip)
   const setRangeSelection = useUiStore((s) => s.setRangeSelection)
   const clearRangeSelection = useUiStore((s) => s.clearRangeSelection)
@@ -37,8 +41,10 @@ export function useClipDrag(
   const [dragOffsetSec, setDragOffsetSec] = useState(0)
   const [isDragging, setIsDragging] = useState(false)
   const [isRangeSelecting, setIsRangeSelecting] = useState(false)
+  const [dragTrackOffset, setDragTrackOffset] = useState(0)
   const stateRef = useRef<{
     startX: number
+    startY: number
     startSec: number
     mode: InteractionMode
     holdTimer: ReturnType<typeof setTimeout> | null
@@ -57,6 +63,7 @@ export function useClipDrag(
 
       stateRef.current = {
         startX,
+        startY: e.clientY,
         startSec: currentStartSec,
         mode: 'pending',
         holdTimer: null,
@@ -128,6 +135,8 @@ export function useClipDrag(
         } else if (stateRef.current.mode === 'grab') {
           const offset = computeDragOffset(stateRef.current.startX, ev.clientX, zoom)
           setDragOffsetSec(offset)
+          const dy = ev.clientY - stateRef.current.startY
+          setDragTrackOffset(Math.round(dy / TRACK_HEIGHT))
         }
       }
 
@@ -148,12 +157,36 @@ export function useClipDrag(
           clearRangeSelection()
         } else if (stateRef.current.mode === 'grab') {
           const finalOffset = computeDragOffset(stateRef.current.startX, ev.clientX, zoom)
-          const newStart = Math.max(0, stateRef.current.startSec + finalOffset)
-          moveClip(trackId, clipId, newStart)
+          let newStart = Math.max(0, stateRef.current.startSec + finalOffset)
+
+          // Determine target track from vertical movement
+          const allTracks = useProjectStore.getState().projectFile.project.tracks
+          const allAudioFiles = useProjectStore.getState().projectFile.audioFiles
+          const currentIdx = allTracks.findIndex((t) => t.id === trackId)
+          const dy = ev.clientY - stateRef.current.startY
+          const targetIdx = Math.max(0, Math.min(allTracks.length - 1, currentIdx + Math.round(dy / TRACK_HEIGHT)))
+          const targetTrack = allTracks[targetIdx]
+
+          // Snap to adjacent clips on target track
+          const snapSec = pixelToTime(EDGE_SNAP_PX)
+          newStart = snapToAdjacentClip(targetTrack, clipDurationSec, newStart, clipId, allAudioFiles, snapSec)
+
+          // Collision check
+          const collision = findClipCollision(targetTrack, clipDurationSec, newStart, clipId, allAudioFiles)
+          if (collision) {
+            useUiStore.getState().showToast('Area too small, try elsewhere', 'error')
+            useUiStore.getState().setClipCollisionFlash({ trackId: targetTrack.id })
+            setTimeout(() => useUiStore.getState().setClipCollisionFlash(null), 600)
+          } else if (targetTrack.id === trackId) {
+            moveClip(trackId, clipId, newStart)
+          } else {
+            moveClipToTrack(trackId, clipId, targetTrack.id, newStart)
+          }
         }
         // range-select: selection stays (finalized on mouseup)
 
         setDragOffsetSec(0)
+        setDragTrackOffset(0)
         setIsDragging(false)
         setIsRangeSelecting(false)
         stateRef.current = null
@@ -165,6 +198,7 @@ export function useClipDrag(
         if (stateRef.current?.mode === 'grab') {
           ev.preventDefault()
           setDragOffsetSec(0)
+          setDragTrackOffset(0)
           setIsDragging(false)
         }
         if (stateRef.current?.mode === 'range-select') {
@@ -183,6 +217,7 @@ export function useClipDrag(
             clearTimeout(stateRef.current.holdTimer)
           }
           setDragOffsetSec(0)
+          setDragTrackOffset(0)
           setIsDragging(false)
           setIsRangeSelecting(false)
           stateRef.current = null
@@ -202,8 +237,8 @@ export function useClipDrag(
       document.addEventListener('contextmenu', onContextMenu)
       document.addEventListener('keydown', onKeyDown)
     },
-    [clipId, trackId, currentStartSec, clipDurationSec, moveClip, selectClip, setRangeSelection, clearRangeSelection, seekTo, zoom, pixelToTime]
+    [clipId, trackId, currentStartSec, clipDurationSec, moveClip, moveClipToTrack, selectClip, setRangeSelection, clearRangeSelection, seekTo, zoom, pixelToTime]
   )
 
-  return { onMouseDown, dragOffsetSec, isDragging, isRangeSelecting }
+  return { onMouseDown, dragOffsetSec, isDragging, isRangeSelecting, dragTrackOffset }
 }

@@ -16,6 +16,7 @@ export function TrackLane({ track, height, totalWidth: parentTotalWidth }: Props
   const durationSec = useProjectStore((s) => s.projectFile.project.durationSec)
   const audioFiles = useProjectStore((s) => s.projectFile.audioFiles)
   const deselectAll = useUiStore((s) => s.deselectAll)
+  const collisionFlash = useUiStore((s) => s.clipCollisionFlash)
   const { timeToPixel } = useTimeToPixel()
 
   // Account for loop extensions when computing lane width
@@ -63,6 +64,11 @@ export function TrackLane({ track, height, totalWidth: parentTotalWidth }: Props
       {track.clips.map((clip) => (
         <ClipView key={clip.id} track={track} clip={clip} laneHeight={height} />
       ))}
+
+      {/* Collision flash overlay */}
+      {collisionFlash?.trackId === track.id && (
+        <div className={styles.collisionFlash} />
+      )}
     </div>
   )
 }

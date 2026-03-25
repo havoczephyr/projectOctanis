@@ -29,6 +29,12 @@ export const octanisApi = {
       channels?: number
     ): Promise<DecodeAudioResult> =>
       ipcRenderer.invoke('ffmpeg:decodeAudioFile', audioPath, sampleRate, channels),
+    encodeAudio: (
+      webmData: ArrayBuffer,
+      outputPath: string,
+      format: string
+    ): Promise<AudioFile> =>
+      ipcRenderer.invoke('ffmpeg:encodeAudio', webmData, outputPath, format),
   },
   fs: {
     readdir: (dirPath: string): Promise<FileEntry[]> =>

@@ -23,6 +23,22 @@
   pointer-events: none;
 }
 
+/* Collision flash (red pulse on rejected drop) */
+.collisionFlash {
+  position: absolute;
+  inset: 0;
+  background: rgba(255, 51, 102, 0.25);
+  pointer-events: none;
+  z-index: 50;
+  animation: collision-flash 500ms ease-out forwards;
+}
+
+@keyframes collision-flash {
+  0% { opacity: 1; }
+  50% { opacity: 0.6; }
+  100% { opacity: 0; }
+}
+
 /* Left track color accent stripe */
 .lane::before {
   content: '';

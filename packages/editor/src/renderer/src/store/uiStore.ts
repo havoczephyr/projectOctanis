@@ -86,6 +86,20 @@ interface UiStore {
   audioOptimization: boolean
   toggleAudioOptimization: () => void
   _prePlaybackIntensity: UiIntensity | null
+
+  /** Voice recorder popup */
+  showRecorder: boolean
+  openRecorder: () => void
+  closeRecorder: () => void
+
+  /** Toast notification */
+  toastMessage: { text: string; severity: 'error' | 'info' } | null
+  showToast: (text: string, severity: 'error' | 'info') => void
+  clearToast: () => void
+
+  /** Collision flash on track */
+  clipCollisionFlash: { trackId: string } | null
+  setClipCollisionFlash: (flash: { trackId: string } | null) => void
 }
 
 export const MIN_ZOOM = 20   // px per second
@@ -169,4 +183,15 @@ export const useUiStore = create<UiStore>((set) => ({
   audioOptimization: false,
   toggleAudioOptimization: () => set((s) => ({ audioOptimization: !s.audioOptimization })),
   _prePlaybackIntensity: null,
+
+  showRecorder: false,
+  openRecorder: () => set({ showRecorder: true }),
+  closeRecorder: () => set({ showRecorder: false }),
+
+  toastMessage: null,
+  showToast: (text, severity) => set({ toastMessage: { text, severity } }),
+  clearToast: () => set({ toastMessage: null }),
+
+  clipCollisionFlash: null,
+  setClipCollisionFlash: (flash) => set({ clipCollisionFlash: flash }),
 }))

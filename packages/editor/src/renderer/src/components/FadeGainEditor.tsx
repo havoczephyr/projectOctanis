@@ -19,7 +19,8 @@ const ANCHOR_SIZE = 10
 const POINT_RADIUS = 6
 const GAIN_MIN = 0
 const GAIN_MAX = 2
-const SNAP_THRESHOLD_PX = 8
+const SNAP_THRESHOLD_PX = 4
+const DRAG_SENSITIVITY = 2.0
 
 function gainToY(gain: number): number {
   return CANVAS_H - (gain / GAIN_MAX) * CANVAS_H
@@ -109,6 +110,7 @@ export function FadeGainEditor(): React.ReactElement | null {
   const [dragTarget, setDragTarget] = useState<DragTarget | null>(null)
   const [localRegion, setLocalRegion] = useState<FadeRegion | null>(null)
   const dragStartRef = useRef<{ y: number; x: number } | null>(null)
+  const initialValueRef = useRef<{ gain: number; x?: number } | null>(null)
 
   // Duck mode
   const [duckMode, setDuckMode] = useState(false)
@@ -133,6 +135,14 @@ export function FadeGainEditor(): React.ReactElement | null {
 
   // The region we render — local state during drag, store state otherwise
   const displayRegion = localRegion ?? region
+
+  // Detect adjacent fade regions
+  const leftAdjacentRegion = clip?.fadeRegions.find(
+    (r) => r.id !== displayRegion?.id && Math.abs(r.endSec - (displayRegion?.startSec ?? 0)) < 0.01
+  ) ?? null
+  const rightAdjacentRegion = clip?.fadeRegions.find(
+    (r) => r.id !== displayRegion?.id && Math.abs(r.startSec - (displayRegion?.endSec ?? 0)) < 0.01
+  ) ?? null
 
   const { peaks, state: peaksState } = usePeaks(clip?.audioFileId ?? '')
 
@@ -179,6 +189,14 @@ export function FadeGainEditor(): React.ReactElement | null {
     e.stopPropagation()
     if (!region) return
     dragStartRef.current = { y: e.clientY, x: e.clientX }
+    if (target.type === 'start-anchor') {
+      initialValueRef.current = { gain: region.startGain }
+    } else if (target.type === 'end-anchor') {
+      initialValueRef.current = { gain: region.endGain }
+    } else if (target.type === 'control-point') {
+      const pt = region.controlPoints.find((p) => p.id === target.pointId)
+      if (pt) initialValueRef.current = { gain: pt.gain, x: pt.x }
+    }
     setLocalRegion({ ...region })
     setDragTarget(target)
   }, [region])
@@ -318,41 +336,38 @@ export function FadeGainEditor(): React.ReactElement | null {
     return targets
   }, [clipVolume, peaks, displayRegion, clipDurationSec])
 
-  // Override handleDragMove with snap awareness
+  // Absolute-delta drag with sensitivity multiplier
   const handleDragMoveWithSnap = useCallback((e: MouseEvent) => {
-    if (!dragTarget || !dragStartRef.current || !displayRegion) return
+    if (!dragTarget || !dragStartRef.current || !displayRegion || !initialValueRef.current) return
 
-    const dy = e.clientY - dragStartRef.current.y
-    const dx = e.clientX - dragStartRef.current.x
+    const totalDy = (e.clientY - dragStartRef.current.y) * DRAG_SENSITIVITY
+    const totalDx = (e.clientX - dragStartRef.current.x) * DRAG_SENSITIVITY
+    const init = initialValueRef.current
 
     setLocalRegion((prev) => {
       const base = prev ?? displayRegion
       if (dragTarget.type === 'start-anchor') {
-        const rawGain = yToGain(gainToY(displayRegion.startGain) + dy)
-        return { ...base, startGain: rawGain }
+        const newGain = yToGain(gainToY(init.gain) + totalDy)
+        return { ...base, startGain: newGain }
       }
       if (dragTarget.type === 'end-anchor') {
-        const rawGain = yToGain(gainToY(displayRegion.endGain) + dy)
-        return { ...base, endGain: rawGain }
+        const newGain = yToGain(gainToY(init.gain) + totalDy)
+        return { ...base, endGain: newGain }
       }
       if (dragTarget.type === 'control-point') {
-        const point = base.controlPoints.find((p) => p.id === dragTarget.pointId)
-        if (!point) return base
-        const svgX = point.x * CANVAS_W + dx
-        const svgY = gainToY(point.gain) + dy
+        const svgX = (init.x ?? 0) * CANVAS_W + totalDx
+        const svgY = gainToY(init.gain) + totalDy
         const newX = xToNormalized(svgX)
         let newGain = yToGain(svgY)
 
-        // Y-axis snapping
+        // Y-axis snapping (reduced threshold)
         const targets = getSnapTargets(newX)
         let snapped = false
         for (const target of targets) {
-          const targetY = gainToY(target)
-          const currentY = gainToY(newGain)
-          if (Math.abs(targetY - currentY) < SNAP_THRESHOLD_PX) {
+          if (Math.abs(gainToY(target) - gainToY(newGain)) < SNAP_THRESHOLD_PX) {
             newGain = target
             snapped = true
-            setSnapIndicator({ y: targetY, label: target.toFixed(2) })
+            setSnapIndicator({ y: gainToY(target), label: target.toFixed(2) })
             break
           }
         }
@@ -367,8 +382,6 @@ export function FadeGainEditor(): React.ReactElement | null {
       }
       return base
     })
-
-    dragStartRef.current = { y: e.clientY, x: e.clientX }
   }, [dragTarget, displayRegion, getSnapTargets])
 
   const handleDragEndWithSnap = useCallback(() => {
@@ -376,6 +389,7 @@ export function FadeGainEditor(): React.ReactElement | null {
     if (!editorState || !localRegion || !dragTarget) {
       setDragTarget(null)
       setLocalRegion(null)
+      initialValueRef.current = null
       return
     }
 
@@ -400,6 +414,7 @@ export function FadeGainEditor(): React.ReactElement | null {
 
     setDragTarget(null)
     setLocalRegion(null)
+    initialValueRef.current = null
   }, [editorState, localRegion, dragTarget, updateFadeRegion, updateControlPoint])
 
   // Register drag listeners
@@ -607,6 +622,49 @@ export function FadeGainEditor(): React.ReactElement | null {
                 strokeDasharray="2 2"
                 className={styles.snapIndicator}
               />
+            )}
+
+            {/* Adjacent region indicators */}
+            {leftAdjacentRegion && (
+              <g pointerEvents="none" opacity={0.6}>
+                <polygon
+                  points={`0,${CANVAS_H / 2 - 10} 12,${CANVAS_H / 2} 0,${CANVAS_H / 2 + 10}`}
+                  fill={trackColor}
+                  fillOpacity={0.4}
+                  stroke={trackColor}
+                  strokeWidth={1}
+                />
+                <text
+                  x={14}
+                  y={CANVAS_H / 2 + 4}
+                  fill={trackColor}
+                  fontSize={8}
+                  fontFamily="monospace"
+                >
+                  ← {leftAdjacentRegion.startSec.toFixed(1)}–{leftAdjacentRegion.endSec.toFixed(1)}s
+                </text>
+              </g>
+            )}
+            {rightAdjacentRegion && (
+              <g pointerEvents="none" opacity={0.6}>
+                <polygon
+                  points={`${CANVAS_W},${CANVAS_H / 2 - 10} ${CANVAS_W - 12},${CANVAS_H / 2} ${CANVAS_W},${CANVAS_H / 2 + 10}`}
+                  fill={trackColor}
+                  fillOpacity={0.4}
+                  stroke={trackColor}
+                  strokeWidth={1}
+                />
+                <text
+                  x={CANVAS_W - 14}
+                  y={CANVAS_H / 2 + 4}
+                  fill={trackColor}
+                  fontSize={8}
+                  fontFamily="monospace"
+                  textAnchor="end"
+                >
+                  {rightAdjacentRegion.startSec.toFixed(1)}–{rightAdjacentRegion.endSec.toFixed(1)}s →
+                </text>
+              </g>
             )}
 
             {/* Gain scale labels */}

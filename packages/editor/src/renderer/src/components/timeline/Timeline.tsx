@@ -8,11 +8,10 @@ import { useProjectStore } from '../../store/projectStore'
 import { useTransportStore } from '../../store/transportStore'
 import { useUiStore, MIN_ZOOM, MAX_ZOOM, PLAYHEAD_SNAP_PX } from '../../store/uiStore'
 import { useTimeToPixel } from '../../hooks/useTimeToPixel'
+import { TRACK_HEIGHT, RULER_HEIGHT, HEADER_WIDTH } from '../../constants'
+import { findClipCollision, snapToAdjacentClip } from '../../utils/clipCollision'
+import { ToastMessage } from './ToastMessage'
 import styles from './Timeline.module.css'
-
-const RULER_HEIGHT = 28
-const TRACK_HEIGHT = 80
-const HEADER_WIDTH = 160
 
 export function Timeline(): React.ReactElement {
   const tracks = useProjectStore((s) => s.projectFile.project.tracks)
@@ -49,21 +48,36 @@ export function Timeline(): React.ReactElement {
   const setZoom = useUiStore((s) => s.setZoom)
   const deselectAll = useUiStore((s) => s.deselectAll)
 
-  function handleWheel(e: React.WheelEvent): void {
-    if (e.ctrlKey || e.metaKey) {
-      e.preventDefault()
-      const container = scrollContainerRef.current
-      if (!container) return
+  // Refs for native wheel listener (avoid stale closures)
+  const zoomRef = useRef(zoom)
+  const scrollLeftRef = useRef(scrollLeft)
 
-      const rect = container.getBoundingClientRect()
-      const mouseX = e.clientX - rect.left
-      const timeSec = (scrollLeft + mouseX) / zoom
+  // Keep refs in sync
+  useEffect(() => { zoomRef.current = zoom }, [zoom])
+  useEffect(() => { scrollLeftRef.current = scrollLeft }, [scrollLeft])
 
-      const newZoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom + (-e.deltaY * 0.5)))
-      setZoom(newZoom)
-      setScrollLeft(timeSec * newZoom - mouseX)
+  // Native wheel listener with { passive: false } so preventDefault works
+  useEffect(() => {
+    const container = scrollContainerRef.current
+    if (!container) return
+
+    function handleWheel(e: WheelEvent): void {
+      if (e.ctrlKey || e.metaKey) {
+        e.preventDefault()
+        const rect = container!.getBoundingClientRect()
+        const mouseX = e.clientX - rect.left
+        const curZoom = zoomRef.current
+        const curScroll = scrollLeftRef.current
+        const timeSec = (curScroll + mouseX) / curZoom
+        const newZoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, curZoom + (-e.deltaY * 0.5)))
+        setZoom(newZoom)
+        setScrollLeft(timeSec * newZoom - mouseX)
+      }
     }
-  }
+
+    container.addEventListener('wheel', handleWheel, { passive: false })
+    return () => container.removeEventListener('wheel', handleWheel)
+  }, [setZoom, setScrollLeft])
 
   function handleScrollAreaClick(e: React.MouseEvent): void {
     if (e.target === e.currentTarget) deselectAll()
@@ -73,19 +87,11 @@ export function Timeline(): React.ReactElement {
   const handleDrop = useCallback(
     async (e: React.DragEvent, targetTrackId?: string) => {
       e.preventDefault()
-      // Capture everything synchronously before any async boundary —
-      // React synthetic events are pooled and currentTarget is nullified after the handler returns
       const audioPath = e.dataTransfer.getData('application/octanis-audio-path')
-      console.debug('[Octanis:DnD] handleDrop fired', { audioPath, targetTrackId, hasData: !!audioPath })
-      if (!audioPath) {
-        console.debug('[Octanis:DnD] handleDrop aborted — no audio path in dataTransfer')
-        return
-      }
-      // Always use the scroll container for consistent position calculation —
-      // e.currentTarget may be a TrackLane (inside scrolled content) which would
-      // double-count scrollLeft in the offset
+      if (!audioPath) return
+
       const rect = scrollContainerRef.current!.getBoundingClientRect()
-      const relativeX = e.clientX - rect.left + scrollLeft
+      const relativeX = e.clientX - rect.left + scrollContainerRef.current!.scrollLeft
       let dropTimeSec = Math.max(0, pixelToTime(relativeX))
 
       // Snap to playhead or ghost play-start marker if within threshold
@@ -99,25 +105,38 @@ export function Timeline(): React.ReactElement {
           dropTimeSec = playStartSec
         }
       }
-      console.debug('[Octanis:DnD] drop position', { clientX: e.clientX, rectLeft: rect.left, scrollLeft, relativeX, dropTimeSec })
 
-      // Safe to await now that all sync values are captured
       let audioFile
       try {
-        console.debug('[Octanis:DnD] calling inspectAudio...', { audioPath })
         audioFile = await window.octanis.ffmpeg.inspectAudio(audioPath)
-        console.debug('[Octanis:DnD] inspectAudio result', audioFile)
       } catch (err) {
         console.error('[Octanis:DnD] inspectAudio FAILED', audioPath, err)
         return
       }
       addAudioFile(audioFile)
 
+      // Collision checking when dropping onto an existing track
+      if (targetTrackId) {
+        const currentTracks = useProjectStore.getState().projectFile.project.tracks
+        const currentAudioFiles = useProjectStore.getState().projectFile.audioFiles
+        const targetTrack = currentTracks.find((t) => t.id === targetTrackId)
+        if (targetTrack) {
+          const snapSec = pixelToTime(PLAYHEAD_SNAP_PX)
+          dropTimeSec = snapToAdjacentClip(targetTrack, audioFile.durationSec, dropTimeSec, null, currentAudioFiles, snapSec)
+          const collision = findClipCollision(targetTrack, audioFile.durationSec, dropTimeSec, null, currentAudioFiles)
+          if (collision) {
+            useUiStore.getState().showToast('Area too small, try elsewhere', 'error')
+            useUiStore.getState().setClipCollisionFlash({ trackId: targetTrackId })
+            setTimeout(() => useUiStore.getState().setClipCollisionFlash(null), 600)
+            return
+          }
+        }
+      }
+
       const trackId = targetTrackId ?? addTrack()
-      const clipId = addClip(trackId, audioFile.id, dropTimeSec)
-      console.debug('[Octanis:DnD] clip created', { trackId, clipId, audioFileId: audioFile.id, dropTimeSec })
+      addClip(trackId, audioFile.id, dropTimeSec)
     },
-    [addAudioFile, addClip, addTrack, pixelToTime, scrollLeft]
+    [addAudioFile, addClip, addTrack, pixelToTime]
   )
 
   return (
@@ -141,11 +160,18 @@ export function Timeline(): React.ReactElement {
         ref={scrollContainerRef}
         className={styles.scrollArea}
         onScroll={handleScroll}
-        onWheel={handleWheel}
         onClick={handleScrollAreaClick}
         onDrop={(e) => {
-          const laneEl = (e.target as HTMLElement).closest('[data-track-id]')
-          const targetTrackId = laneEl?.getAttribute('data-track-id') ?? undefined
+          const rect = scrollContainerRef.current!.getBoundingClientRect()
+          const relativeY = e.clientY - rect.top + scrollContainerRef.current!.scrollTop
+          const adjustedY = relativeY - RULER_HEIGHT
+          let targetTrackId: string | undefined
+          if (adjustedY >= 0) {
+            const trackIndex = Math.floor(adjustedY / TRACK_HEIGHT)
+            if (trackIndex < tracks.length) {
+              targetTrackId = tracks[trackIndex].id
+            }
+          }
           handleDrop(e, targetTrackId)
         }}
         onDragOver={(e) => {
@@ -179,6 +205,7 @@ export function Timeline(): React.ReactElement {
         </div>
       </div>
       <Minimap scrollContainerRef={scrollContainerRef} />
+      <ToastMessage />
     </div>
   )
 }

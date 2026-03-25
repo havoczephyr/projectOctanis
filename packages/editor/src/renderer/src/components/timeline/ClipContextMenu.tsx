@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react'
 import { nanoid } from 'nanoid'
 import { useUiStore } from '../../store/uiStore'
 import { useProjectStore } from '../../store/projectStore'
+import { createDuckOnTimeline } from '../../hooks/useFadeRegionActions'
 import styles from './ClipContextMenu.module.css'
 
 export function ClipContextMenu(): React.ReactElement | null {
@@ -91,6 +92,21 @@ export function ClipContextMenu(): React.ReactElement | null {
       startSec: rangeSelection.startSec,
       endSec: rangeSelection.endSec,
     })
+    clearRangeSelection()
+    closeContextMenu()
+  }
+
+  function handleDuckSelection(): void {
+    if (!rangeSelection || !clip || !track) return
+    // Default duck: 0.3x gain (~-10dB)
+    createDuckOnTimeline(
+      track.id,
+      clip.id,
+      rangeSelection.startSec,
+      rangeSelection.endSec,
+      clip.volume * 0.3,
+      clip.volume
+    )
     clearRangeSelection()
     closeContextMenu()
   }
@@ -197,6 +213,14 @@ export function ClipContextMenu(): React.ReactElement | null {
         onClick={handleMuteSelection}
       >
         Mute Selection{!hasRange ? ' (select range first)' : ''}
+      </button>
+
+      <button
+        className={styles.item}
+        disabled={!hasRange}
+        onClick={handleDuckSelection}
+      >
+        Duck Selection{!hasRange ? ' (select range first)' : ''}
       </button>
 
       {!showLoopInput ? (

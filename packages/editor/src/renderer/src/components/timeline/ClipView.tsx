@@ -34,7 +34,7 @@ export function ClipView({ track, clip, laneHeight }: Props): React.ReactElement
     : 0
   const effectiveDuration = clipDurationSec + loopExtra
 
-  const { onMouseDown, dragOffsetSec, isDragging, isRangeSelecting } = useClipDrag(
+  const { onMouseDown, dragOffsetSec, isDragging, isRangeSelecting, dragTrackOffset } = useClipDrag(
     track.id, clip.id, clip.startSec, effectiveDuration
   )
 
@@ -73,10 +73,19 @@ export function ClipView({ track, clip, laneHeight }: Props): React.ReactElement
           width: clipWidth,
           cursor,
           '--track-color': track.color,
+          ...(isDragging && dragTrackOffset !== 0 ? {
+            transform: `translateY(${dragTrackOffset * laneHeight}px)`,
+            zIndex: 100,
+            opacity: 0.8,
+          } : {}),
         } as React.CSSProperties
       }
       onMouseDown={onMouseDown}
       onContextMenu={handleContextMenu}
+      onDragOver={(e) => {
+        e.preventDefault()
+        e.dataTransfer.dropEffect = 'copy'
+      }}
     >
       {/* Waveform (bottom layer) */}
       <WaveformCanvas

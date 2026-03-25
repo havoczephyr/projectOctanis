@@ -2,6 +2,7 @@ import React, { useEffect } from 'react'
 import { Sidebar } from './Sidebar'
 import { TransportBar } from './TransportBar'
 import { Timeline } from '../timeline/Timeline'
+import { AudioRecorder } from '../recorder/AudioRecorder'
 import { useProjectStore } from '../../store/projectStore'
 import { useUiStore } from '../../store/uiStore'
 import { useTransportStore } from '../../store/transportStore'
@@ -18,6 +19,7 @@ export function AppShell(): React.ReactElement {
   const uiIntensity = useUiStore((s) => s.uiIntensity)
   const cycleUiIntensity = useUiStore((s) => s.cycleUiIntensity)
   const audioOptimization = useUiStore((s) => s.audioOptimization)
+  const showRecorder = useUiStore((s) => s.showRecorder)
   const toggleAudioOptimization = useUiStore((s) => s.toggleAudioOptimization)
 
   // Audio optimization: auto-reduce UI intensity during playback
@@ -54,6 +56,14 @@ export function AppShell(): React.ReactElement {
         <div className={styles.titleBarControls}>
           <button className="btn" onClick={handleOpen}>Open</button>
           <button className="btn" onClick={handleSave}>Save{isDirty ? ' *' : ''}</button>
+          <button
+            className="btn"
+            onClick={() => useUiStore.getState().openRecorder()}
+            title="Open voice recorder"
+            style={{ color: '#ff3366' }}
+          >
+            {'●'} REC
+          </button>
         </div>
         <div className={styles.titleBarCenter}>
           <span className="glow-text">{title}{isDirty ? ' ●' : ''}</span>
@@ -83,6 +93,9 @@ export function AppShell(): React.ReactElement {
         <Sidebar />
         <Timeline />
       </div>
+
+      {/* Voice recorder modal */}
+      {showRecorder && <AudioRecorder />}
     </div>
   )
 }
