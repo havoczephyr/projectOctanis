@@ -4,6 +4,8 @@ import { TransportBar } from './TransportBar'
 import { Timeline } from '../timeline/Timeline'
 import { useProjectStore } from '../../store/projectStore'
 import { useUiStore } from '../../store/uiStore'
+import { saveProject } from '../../utils/saveProject'
+import { confirmUnsavedChanges } from '../../utils/confirmUnsavedChanges'
 import styles from './AppShell.module.css'
 
 export function AppShell(): React.ReactElement {
@@ -16,17 +18,13 @@ export function AppShell(): React.ReactElement {
   const cycleUiIntensity = useUiStore((s) => s.cycleUiIntensity)
 
   async function handleOpen(): Promise<void> {
+    if (!(await confirmUnsavedChanges())) return
     const result = await window.octanis.file.open()
     if (result) open(result.projectFile, result.filePath)
   }
 
   async function handleSave(): Promise<void> {
-    const { projectFile, currentFilePath, setFilePath, markClean } = useProjectStore.getState()
-    const savedPath = await window.octanis.file.save(projectFile, currentFilePath ?? undefined)
-    if (savedPath) {
-      setFilePath(savedPath)
-      markClean()
-    }
+    await saveProject()
   }
 
   return (

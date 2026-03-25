@@ -90,7 +90,7 @@ export function registerFileHandlers(): void {
     const win = BrowserWindow.getFocusedWindow()
     const result = await dialog.showOpenDialog(win!, {
       title: 'Open Music Folder',
-      properties: ['openDirectory'],
+      properties: ['openDirectory', 'createDirectory'],
     })
 
     if (result.canceled || result.filePaths.length === 0) return null
@@ -121,6 +121,22 @@ export function registerFileHandlers(): void {
       const filePath = join(folderPath, `${safeName}.octanis.json`)
       await writeFile(filePath, JSON.stringify(projectFile, null, 2), 'utf-8')
       return { projectFile, filePath }
+    }
+  )
+
+  ipcMain.handle(
+    'dialog:showUnsavedChanges',
+    async (): Promise<'save' | 'discard' | 'cancel'> => {
+      const win = BrowserWindow.getFocusedWindow()
+      const result = await dialog.showMessageBox(win!, {
+        type: 'warning',
+        title: 'Unsaved Changes',
+        message: 'You have unsaved changes. What would you like to do?',
+        buttons: ['Save', "Don't Save", 'Cancel'],
+        defaultId: 0,
+        cancelId: 2,
+      })
+      return (['save', 'discard', 'cancel'] as const)[result.response]
     }
   )
 

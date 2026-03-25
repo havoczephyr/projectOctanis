@@ -2,7 +2,6 @@ import React from 'react'
 import { FileBrowser } from '../fileBrowser/FileBrowser'
 import { useUiStore } from '../../store/uiStore'
 import { useProjectStore } from '../../store/projectStore'
-import { copyAudioToProject } from '../../utils/copyAudioToProject'
 import styles from './Sidebar.module.css'
 
 export function Sidebar(): React.ReactElement {
@@ -16,20 +15,18 @@ export function Sidebar(): React.ReactElement {
 
   async function handleImportAudio(): Promise<void> {
     const files = await window.octanis.file.importAudio()
-    if (!files) return
-    const currentFilePath = useProjectStore.getState().currentFilePath
+    if (!files || files.length === 0) return
     for (const sourcePath of files) {
-      const localPath = currentFilePath
-        ? await copyAudioToProject(sourcePath, currentFilePath)
-        : sourcePath
-      const audioFile = await window.octanis.ffmpeg.inspectAudio(localPath)
-      useProjectStore.getState().addAudioFile(audioFile)
+      try {
+        const audioFile = await window.octanis.ffmpeg.inspectAudio(sourcePath)
+        useProjectStore.getState().addAudioFile(audioFile)
+      } catch (err) {
+        console.error('[Octanis] Failed to import audio file', sourcePath, err)
+      }
     }
-    // Auto-set sidebar to project's audio folder
-    if (currentFilePath) {
-      const projectFolder = currentFilePath.substring(0, currentFilePath.lastIndexOf('/'))
-      setSidebarFolder(`${projectFolder}/audio`)
-    }
+    // Navigate sidebar to the folder containing the imported files
+    const folder = files[0].substring(0, files[0].lastIndexOf('/'))
+    setSidebarFolder(folder)
   }
 
   return (

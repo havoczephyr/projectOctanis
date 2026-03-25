@@ -9,6 +9,12 @@ export async function copyAudioToProject(
   const lastSlash = projectFilePath.lastIndexOf('/')
   const projectFolder = projectFilePath.substring(0, lastSlash)
   const audioDir = `${projectFolder}/audio`
+
+  // Skip copy if file is already inside the project's audio directory
+  if (sourcePath.startsWith(audioDir + '/')) {
+    return sourcePath
+  }
+
   const fileName = sourcePath.substring(sourcePath.lastIndexOf('/') + 1)
   const destPath = `${audioDir}/${fileName}`
   return window.octanis.fs.copyFile(sourcePath, destPath)

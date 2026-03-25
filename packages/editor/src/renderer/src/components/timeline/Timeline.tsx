@@ -6,7 +6,6 @@ import { Playhead } from './Playhead'
 import { useProjectStore } from '../../store/projectStore'
 import { useUiStore, MIN_ZOOM, MAX_ZOOM } from '../../store/uiStore'
 import { useTimeToPixel } from '../../hooks/useTimeToPixel'
-import { copyAudioToProject } from '../../utils/copyAudioToProject'
 import styles from './Timeline.module.css'
 
 const RULER_HEIGHT = 28
@@ -75,22 +74,10 @@ export function Timeline(): React.ReactElement {
       console.debug('[Octanis:DnD] drop position', { clientX: e.clientX, rectLeft: rect.left, scrollLeft, relativeX, dropTimeSec })
 
       // Safe to await now that all sync values are captured
-      // Copy the audio file into the project folder if a project is open
-      let resolvedPath = audioPath
-      const currentFilePath = useProjectStore.getState().currentFilePath
-      if (currentFilePath) {
-        try {
-          resolvedPath = await copyAudioToProject(audioPath, currentFilePath)
-          console.debug('[Octanis:DnD] copied audio to project', { from: audioPath, to: resolvedPath })
-        } catch (copyErr) {
-          console.error('[Octanis:DnD] copyAudioToProject FAILED, using original path', copyErr)
-        }
-      }
-
       let audioFile
       try {
-        console.debug('[Octanis:DnD] calling inspectAudio...', { audioPath: resolvedPath })
-        audioFile = await window.octanis.ffmpeg.inspectAudio(resolvedPath)
+        console.debug('[Octanis:DnD] calling inspectAudio...', { audioPath })
+        audioFile = await window.octanis.ffmpeg.inspectAudio(audioPath)
         console.debug('[Octanis:DnD] inspectAudio result', audioFile)
       } catch (err) {
         console.error('[Octanis:DnD] inspectAudio FAILED', audioPath, err)

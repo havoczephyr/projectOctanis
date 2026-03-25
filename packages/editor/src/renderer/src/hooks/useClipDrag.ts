@@ -11,6 +11,7 @@ export function computeDragOffset(startX: number, currentX: number, zoom: number
 
 const HOLD_DELAY_MS = 380
 const DRAG_THRESHOLD_PX = 3
+const EDGE_SNAP_PX = 8
 
 type InteractionMode = 'pending' | 'range-select' | 'grab'
 
@@ -97,8 +98,16 @@ export function useClipDrag(
           const rect = stateRef.current.clipElementRect
           const relStartX = stateRef.current.startX - rect.left
           const relCurrentX = ev.clientX - rect.left
-          const startTimeSec = Math.max(0, Math.min(clipDurationSec, pixelToTime(relStartX)))
-          const currentTimeSec = Math.max(0, Math.min(clipDurationSec, pixelToTime(relCurrentX)))
+          const clipWidthPx = rect.width
+
+          let startTimeSec = Math.max(0, Math.min(clipDurationSec, pixelToTime(relStartX)))
+          let currentTimeSec = Math.max(0, Math.min(clipDurationSec, pixelToTime(relCurrentX)))
+
+          // Snap to clip edges when near the boundary or past it
+          if (relStartX < EDGE_SNAP_PX) startTimeSec = 0
+          if (relStartX > clipWidthPx - EDGE_SNAP_PX) startTimeSec = clipDurationSec
+          if (relCurrentX < EDGE_SNAP_PX) currentTimeSec = 0
+          if (relCurrentX > clipWidthPx - EDGE_SNAP_PX) currentTimeSec = clipDurationSec
           setRangeSelection({
             clipId,
             trackId,

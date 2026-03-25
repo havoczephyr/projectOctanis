@@ -25,6 +25,15 @@ export interface PeaksResult {
   durationSec: number
 }
 
+// ─── FFmpeg decode types ────────────────────────────────────────────────────────
+
+export interface DecodeAudioResult {
+  /** Raw f32le interleaved PCM data */
+  pcmData: ArrayBuffer
+  sampleRate: number
+  channels: number
+}
+
 // ─── File system types ─────────────────────────────────────────────────────────
 
 export interface FileEntry {

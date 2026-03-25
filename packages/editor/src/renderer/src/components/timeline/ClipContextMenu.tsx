@@ -57,6 +57,10 @@ export function ClipContextMenu(): React.ReactElement | null {
   const hasRange = rangeSelection?.clipId === clip.id &&
     rangeSelection.endSec - rangeSelection.startSec > 0.01
 
+  const hasFullClipOverlap = clip.fadeRegions.some(
+    (r) => 0 < r.endSec && clipDurationSec > r.startSec
+  )
+
   const beatDurationSec = 60 / bpm
 
   function handleEditFadeGain(): void {
@@ -66,6 +70,22 @@ export function ClipContextMenu(): React.ReactElement | null {
       id: regionId,
       startSec: rangeSelection.startSec,
       endSec: rangeSelection.endSec,
+      startGain: clip.volume,
+      endGain: clip.volume,
+      controlPoints: [],
+    })
+    openFadeGainEditor(track.id, clip.id, regionId)
+    clearRangeSelection()
+    closeContextMenu()
+  }
+
+  function handleFadeEntireClip(): void {
+    if (!clip || !track || hasFullClipOverlap) return
+    const regionId = nanoid()
+    addFadeRegion(track.id, clip.id, {
+      id: regionId,
+      startSec: 0,
+      endSec: clipDurationSec,
       startGain: clip.volume,
       endGain: clip.volume,
       controlPoints: [],
@@ -128,6 +148,14 @@ export function ClipContextMenu(): React.ReactElement | null {
         onClick={handleEditFadeGain}
       >
         Edit Fade Gain{!hasRange ? ' (select range first)' : ''}
+      </button>
+
+      <button
+        className={styles.item}
+        disabled={hasFullClipOverlap}
+        onClick={handleFadeEntireClip}
+      >
+        Fade Entire Clip{hasFullClipOverlap ? ' (has regions)' : ''}
       </button>
 
       <button className={styles.item} onClick={handleSelectEntireClip}>

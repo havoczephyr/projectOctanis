@@ -1,6 +1,6 @@
 import { ipcRenderer } from 'electron'
 import type { OctanisProjectFile, AudioFile } from '@octanis/shared'
-import type { PeakOpts, PeaksResult, FileEntry } from '../ipcTypes'
+import type { PeakOpts, PeaksResult, FileEntry, DecodeAudioResult } from '../ipcTypes'
 
 export const octanisApi = {
   file: {
@@ -23,6 +23,12 @@ export const octanisApi = {
       ipcRenderer.invoke('ffmpeg:extractPeaks', audioPath, opts),
     inspectAudio: (audioPath: string): Promise<AudioFile> =>
       ipcRenderer.invoke('ffmpeg:inspectAudio', audioPath),
+    decodeAudioFile: (
+      audioPath: string,
+      sampleRate?: number,
+      channels?: number
+    ): Promise<DecodeAudioResult> =>
+      ipcRenderer.invoke('ffmpeg:decodeAudioFile', audioPath, sampleRate, channels),
   },
   fs: {
     readdir: (dirPath: string): Promise<FileEntry[]> =>
@@ -31,6 +37,10 @@ export const octanisApi = {
       ipcRenderer.invoke('fs:readAudioFile', filePath),
     copyFile: (source: string, dest: string): Promise<string> =>
       ipcRenderer.invoke('fs:copyFile', source, dest),
+  },
+  dialog: {
+    showUnsavedChanges: (): Promise<'save' | 'discard' | 'cancel'> =>
+      ipcRenderer.invoke('dialog:showUnsavedChanges'),
   },
   menu: {
     onUndo: (cb: () => void): (() => void) => {

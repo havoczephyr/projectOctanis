@@ -2,6 +2,7 @@ import { useEffect, useRef, useCallback } from 'react'
 import { useTransportStore } from '../store/transportStore'
 import { useProjectStore } from '../store/projectStore'
 import { type OctanisProjectFile, interpolateFadeRegionGain } from '@octanis/shared'
+import { pcmToAudioBuffer } from '../utils/pcmToAudioBuffer'
 
 // Cache for decoded AudioBuffers by audioFileId
 const bufferCache = new Map<string, AudioBuffer>()
@@ -17,13 +18,21 @@ async function getAudioBuffer(
     return cached
   }
 
-  console.debug('[Octanis:Audio] buffer cache MISS — reading via IPC', { audioFileId, absolutePath })
-  const arrayBuffer = await window.octanis.fs.readAudioFile(absolutePath)
-  console.debug('[Octanis:Audio] decoding audio data', { audioFileId, bytes: arrayBuffer.byteLength })
-  const decoded = await ctx.decodeAudioData(arrayBuffer)
-  console.debug('[Octanis:Audio] decoded buffer', { audioFileId, durationSec: decoded.duration, sampleRate: decoded.sampleRate, channels: decoded.numberOfChannels })
-  bufferCache.set(audioFileId, decoded)
-  return decoded
+  console.debug('[Octanis:Audio] buffer cache MISS — decoding via ffmpeg IPC', { audioFileId, absolutePath })
+  const audioFiles = useProjectStore.getState().projectFile.audioFiles
+  const af = audioFiles[audioFileId]
+
+  const { pcmData, sampleRate, channels } = await window.octanis.ffmpeg.decodeAudioFile(
+    absolutePath,
+    af?.sampleRate,
+    af?.channels
+  )
+  console.debug('[Octanis:Audio] decoded PCM', { audioFileId, bytes: pcmData.byteLength, sampleRate, channels })
+
+  const buffer = pcmToAudioBuffer(ctx, pcmData, sampleRate, channels)
+  console.debug('[Octanis:Audio] AudioBuffer created', { audioFileId, durationSec: buffer.duration, sampleRate: buffer.sampleRate, channels: buffer.numberOfChannels })
+  bufferCache.set(audioFileId, buffer)
+  return buffer
 }
 
 export function useAudioEngine(): { analyser: AnalyserNode | undefined } {

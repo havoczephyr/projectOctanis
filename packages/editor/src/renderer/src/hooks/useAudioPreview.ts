@@ -1,4 +1,5 @@
 import { useRef, useCallback, useState } from 'react'
+import { pcmToAudioBuffer } from '../utils/pcmToAudioBuffer'
 
 let sharedCtx: AudioContext | null = null
 
@@ -39,11 +40,11 @@ export function useAudioPreview(): {
     if (ctx.state === 'suspended') await ctx.resume()
 
     try {
-      const arrayBuffer = await window.octanis.fs.readAudioFile(audioPath)
-      console.debug('[Octanis:Preview] read via IPC', { bytes: arrayBuffer.byteLength })
+      const { pcmData, sampleRate, channels } = await window.octanis.ffmpeg.decodeAudioFile(audioPath)
+      console.debug('[Octanis:Preview] decoded via ffmpeg', { bytes: pcmData.byteLength, sampleRate, channels })
 
-      const buffer = await ctx.decodeAudioData(arrayBuffer)
-      console.debug('[Octanis:Preview] decoded', { durationSec: buffer.duration, sampleRate: buffer.sampleRate })
+      const buffer = pcmToAudioBuffer(ctx, pcmData, sampleRate, channels)
+      console.debug('[Octanis:Preview] AudioBuffer created', { durationSec: buffer.duration, sampleRate: buffer.sampleRate })
 
       const source = ctx.createBufferSource()
       source.buffer = buffer

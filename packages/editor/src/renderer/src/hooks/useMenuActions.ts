@@ -2,6 +2,8 @@ import { useEffect } from 'react'
 import { useProjectStore } from '../store/projectStore'
 import { useRecentProjectsStore } from '../store/recentProjectsStore'
 import { useUiStore } from '../store/uiStore'
+import { saveProject } from '../utils/saveProject'
+import { confirmUnsavedChanges } from '../utils/confirmUnsavedChanges'
 
 export function useMenuActions(): void {
   useEffect(() => {
@@ -15,6 +17,7 @@ export function useMenuActions(): void {
       useUiStore.getState().setShowUndoHistoryPanel(true)
     })
     const cleanupFileOpen = window.octanis.menu.onFileOpen(async () => {
+      if (!(await confirmUnsavedChanges())) return
       const result = await window.octanis.file.open()
       if (result) {
         useRecentProjectsStore.getState().addRecent(
@@ -24,7 +27,14 @@ export function useMenuActions(): void {
         useProjectStore.getState().setProject(result.projectFile, result.filePath)
       }
     })
-    const cleanupFileClose = window.octanis.menu.onFileClose(() => {
+    const cleanupFileSave = window.octanis.menu.onFileSave(async () => {
+      await saveProject()
+    })
+    const cleanupFileSaveAs = window.octanis.menu.onFileSaveAs(async () => {
+      await saveProject(true)
+    })
+    const cleanupFileClose = window.octanis.menu.onFileClose(async () => {
+      if (!(await confirmUnsavedChanges())) return
       useProjectStore.getState().closeProject()
     })
     return () => {
@@ -32,6 +42,8 @@ export function useMenuActions(): void {
       cleanupRedo()
       cleanupHistory()
       cleanupFileOpen()
+      cleanupFileSave()
+      cleanupFileSaveAs()
       cleanupFileClose()
     }
   }, [])

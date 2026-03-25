@@ -1,6 +1,6 @@
 import { ipcMain } from 'electron'
 import { readdir, readFile, stat, copyFile, mkdir } from 'fs/promises'
-import { join, dirname } from 'path'
+import { join, dirname, resolve } from 'path'
 import log from 'electron-log'
 import type { FileEntry } from '../../ipcTypes'
 
@@ -70,6 +70,10 @@ export function registerFsHandlers(): void {
           const ext = dotIdx !== -1 ? destPath.substring(dotIdx) : ''
           finalPath = `${base}_${counter}${ext}`
           counter++
+        }
+        // Skip copy if source and dest are the same file
+        if (resolve(sourcePath) === resolve(finalPath)) {
+          return finalPath
         }
         await copyFile(sourcePath, finalPath)
         return finalPath
