@@ -62,7 +62,9 @@ export function Sidebar(): React.ReactElement {
           <div className={styles.emptyIcon}>♪</div>
           <div className={styles.emptyText}>Open a folder to browse audio files</div>
         </div>
-      ) : null}
+      ) : (
+        <div style={{ flex: 1 }} />
+      )}
     </div>
   )
 }

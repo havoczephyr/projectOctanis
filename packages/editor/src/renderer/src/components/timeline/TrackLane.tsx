@@ -9,10 +9,10 @@ import styles from './TrackLane.module.css'
 interface Props {
   track: Track
   height: number
-  onDrop: (e: React.DragEvent) => void
+  totalWidth: number
 }
 
-export function TrackLane({ track, height, onDrop }: Props): React.ReactElement {
+export function TrackLane({ track, height, totalWidth: parentTotalWidth }: Props): React.ReactElement {
   const durationSec = useProjectStore((s) => s.projectFile.project.durationSec)
   const audioFiles = useProjectStore((s) => s.projectFile.audioFiles)
   const deselectAll = useUiStore((s) => s.deselectAll)
@@ -29,7 +29,7 @@ export function TrackLane({ track, height, onDrop }: Props): React.ReactElement 
       : 0
     maxClipEnd = Math.max(maxClipEnd, clip.startSec + clipDur + loopExtra)
   }
-  const totalWidth = Math.max(timeToPixel(Math.max(durationSec, maxClipEnd)), 2000)
+  const laneWidth = Math.max(parentTotalWidth, timeToPixel(Math.max(durationSec, maxClipEnd)), 2000)
 
   function handleClick(e: React.MouseEvent): void {
     // Deselect if clicking the lane or its bg, not a clip
@@ -42,15 +42,15 @@ export function TrackLane({ track, height, onDrop }: Props): React.ReactElement 
   return (
     <div
       className={styles.lane}
+      data-track-id={track.id}
       style={
         {
           height,
-          width: totalWidth,
+          width: laneWidth,
           '--track-color': track.color,
         } as React.CSSProperties
       }
       onClick={handleClick}
-      onDrop={(e) => { console.debug('[Octanis:DnD] TrackLane drop', { trackId: track.id, trackName: track.name }); e.stopPropagation(); onDrop(e) }}
       onDragOver={(e) => {
         e.preventDefault()
         e.dataTransfer.dropEffect = 'copy'

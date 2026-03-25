@@ -1,9 +1,10 @@
-import React from 'react'
+import React, { useEffect } from 'react'
 import { Sidebar } from './Sidebar'
 import { TransportBar } from './TransportBar'
 import { Timeline } from '../timeline/Timeline'
 import { useProjectStore } from '../../store/projectStore'
 import { useUiStore } from '../../store/uiStore'
+import { useTransportStore } from '../../store/transportStore'
 import { saveProject } from '../../utils/saveProject'
 import { confirmUnsavedChanges } from '../../utils/confirmUnsavedChanges'
 import styles from './AppShell.module.css'
@@ -16,6 +17,25 @@ export function AppShell(): React.ReactElement {
   const toggleTheme = useUiStore((s) => s.toggleTheme)
   const uiIntensity = useUiStore((s) => s.uiIntensity)
   const cycleUiIntensity = useUiStore((s) => s.cycleUiIntensity)
+  const audioOptimization = useUiStore((s) => s.audioOptimization)
+  const toggleAudioOptimization = useUiStore((s) => s.toggleAudioOptimization)
+
+  // Audio optimization: auto-reduce UI intensity during playback
+  useEffect(() => {
+    let prevTransportState = useTransportStore.getState().state
+    const unsub = useTransportStore.subscribe((ts) => {
+      if (ts.state === prevTransportState) return
+      prevTransportState = ts.state
+      const ui = useUiStore.getState()
+      if (!ui.audioOptimization) return
+      if (ts.state === 'playing') {
+        useUiStore.setState({ _prePlaybackIntensity: ui.uiIntensity, uiIntensity: 'low' })
+      } else if (ui._prePlaybackIntensity) {
+        useUiStore.setState({ uiIntensity: ui._prePlaybackIntensity, _prePlaybackIntensity: null })
+      }
+    })
+    return unsub
+  }, [])
 
   async function handleOpen(): Promise<void> {
     if (!(await confirmUnsavedChanges())) return
@@ -39,6 +59,13 @@ export function AppShell(): React.ReactElement {
           <span className="glow-text">{title}{isDirty ? ' ●' : ''}</span>
         </div>
         <div className={styles.titleBarRight}>
+          <button
+            className={`btn btn--icon ${audioOptimization ? 'btn--primary' : ''}`}
+            onClick={toggleAudioOptimization}
+            title={`Audio optimization: ${audioOptimization ? 'ON' : 'OFF'} — reduce UI during playback`}
+          >
+            {'⚡'}
+          </button>
           <button className="btn btn--icon" onClick={cycleUiIntensity} title={`UI intensity: ${uiIntensity}`}>
             {uiIntensity === 'high' ? 'H' : uiIntensity === 'balanced' ? 'B' : 'L'}
           </button>

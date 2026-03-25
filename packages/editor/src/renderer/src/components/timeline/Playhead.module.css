@@ -58,6 +58,33 @@
   animation: playhead-pulse 0.9s ease-in-out infinite;
 }
 
+/* ─── Ghost Playhead (play-start marker) ─────────────────────────────────── */
+.ghost {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  pointer-events: none;
+  z-index: 7;
+  will-change: left;
+}
+
+.ghostHandle {
+  width: 8px;
+  height: 8px;
+  background: var(--accent-cyan);
+  opacity: 0.5;
+  clip-path: polygon(50% 100%, 0 0, 100% 0);
+  transform: translateX(-50%);
+}
+
+.ghostLine {
+  width: 1px;
+  height: 100%;
+  background: var(--accent-cyan);
+  opacity: 0.3;
+  transform: translateX(-50%);
+}
+
 /* ─── UI Intensity Overrides ─────────────────────────────────────────────── */
 :root[data-ui-intensity="balanced"] .line--playing {
   animation: none;
@@ -76,4 +103,9 @@
 :root[data-ui-intensity="low"] .handle {
   animation: none;
   box-shadow: none;
+}
+
+:root[data-ui-intensity="low"] .ghostLine,
+:root[data-ui-intensity="low"] .ghostHandle {
+  opacity: 0.15;
 }

@@ -81,10 +81,16 @@ interface UiStore {
   contextMenu: ContextMenu | null
   openContextMenu: (x: number, y: number, clipId: string, trackId: string) => void
   closeContextMenu: () => void
+
+  /** Audio optimization: auto-reduce UI intensity during playback */
+  audioOptimization: boolean
+  toggleAudioOptimization: () => void
+  _prePlaybackIntensity: UiIntensity | null
 }
 
 export const MIN_ZOOM = 20   // px per second
 export const MAX_ZOOM = 600  // px per second
+export const PLAYHEAD_SNAP_PX = 12  // snap threshold for drop-to-playhead/ghost
 
 export const useUiStore = create<UiStore>((set) => ({
   theme: 'dark',
@@ -159,4 +165,8 @@ export const useUiStore = create<UiStore>((set) => ({
   contextMenu: null,
   openContextMenu: (x, y, clipId, trackId) => set({ contextMenu: { x, y, clipId, trackId } }),
   closeContextMenu: () => set({ contextMenu: null }),
+
+  audioOptimization: false,
+  toggleAudioOptimization: () => set((s) => ({ audioOptimization: !s.audioOptimization })),
+  _prePlaybackIntensity: null,
 }))

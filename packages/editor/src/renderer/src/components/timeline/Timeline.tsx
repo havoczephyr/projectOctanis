@@ -3,8 +3,10 @@ import { TimelineRuler } from './TimelineRuler'
 import { TrackLane } from './TrackLane'
 import { TrackHeader } from './TrackHeader'
 import { Playhead } from './Playhead'
+import { Minimap } from './Minimap'
 import { useProjectStore } from '../../store/projectStore'
-import { useUiStore, MIN_ZOOM, MAX_ZOOM } from '../../store/uiStore'
+import { useTransportStore } from '../../store/transportStore'
+import { useUiStore, MIN_ZOOM, MAX_ZOOM, PLAYHEAD_SNAP_PX } from '../../store/uiStore'
 import { useTimeToPixel } from '../../hooks/useTimeToPixel'
 import styles from './Timeline.module.css'
 
@@ -79,10 +81,24 @@ export function Timeline(): React.ReactElement {
         console.debug('[Octanis:DnD] handleDrop aborted — no audio path in dataTransfer')
         return
       }
-      const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
-      // scrollArea does NOT include the header column, so no HEADER_WIDTH subtraction
+      // Always use the scroll container for consistent position calculation —
+      // e.currentTarget may be a TrackLane (inside scrolled content) which would
+      // double-count scrollLeft in the offset
+      const rect = scrollContainerRef.current!.getBoundingClientRect()
       const relativeX = e.clientX - rect.left + scrollLeft
-      const dropTimeSec = Math.max(0, pixelToTime(relativeX))
+      let dropTimeSec = Math.max(0, pixelToTime(relativeX))
+
+      // Snap to playhead or ghost play-start marker if within threshold
+      const snapping = useUiStore.getState().snapping
+      if (snapping) {
+        const { playheadSec, playStartSec } = useTransportStore.getState()
+        const snapThresholdSec = pixelToTime(PLAYHEAD_SNAP_PX)
+        if (Math.abs(dropTimeSec - playheadSec) <= snapThresholdSec) {
+          dropTimeSec = playheadSec
+        } else if (playStartSec != null && Math.abs(dropTimeSec - playStartSec) <= snapThresholdSec) {
+          dropTimeSec = playStartSec
+        }
+      }
       console.debug('[Octanis:DnD] drop position', { clientX: e.clientX, rectLeft: rect.left, scrollLeft, relativeX, dropTimeSec })
 
       // Safe to await now that all sync values are captured
@@ -127,7 +143,11 @@ export function Timeline(): React.ReactElement {
         onScroll={handleScroll}
         onWheel={handleWheel}
         onClick={handleScrollAreaClick}
-        onDrop={(e) => handleDrop(e)}
+        onDrop={(e) => {
+          const laneEl = (e.target as HTMLElement).closest('[data-track-id]')
+          const targetTrackId = laneEl?.getAttribute('data-track-id') ?? undefined
+          handleDrop(e, targetTrackId)
+        }}
         onDragOver={(e) => {
           e.preventDefault()
           e.dataTransfer.dropEffect = 'copy'
@@ -141,13 +161,12 @@ export function Timeline(): React.ReactElement {
                 key={track.id}
                 track={track}
                 height={TRACK_HEIGHT}
-                onDrop={(e) => handleDrop(e, track.id)}
+                totalWidth={totalWidth}
               />
             ))}
             {/* Drop zone for creating new tracks */}
             <div
               className={styles.dropZone}
-              onDrop={(e) => { e.stopPropagation(); handleDrop(e) }}
               onDragOver={(e) => {
                 e.preventDefault()
                 e.dataTransfer.dropEffect = 'copy'
@@ -159,6 +178,7 @@ export function Timeline(): React.ReactElement {
           <Playhead totalWidth={totalWidth} rulerHeight={RULER_HEIGHT} />
         </div>
       </div>
+      <Minimap />
     </div>
   )
 }

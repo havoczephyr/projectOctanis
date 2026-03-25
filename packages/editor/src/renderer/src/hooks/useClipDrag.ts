@@ -108,6 +108,17 @@ export function useClipDrag(
           if (relStartX > clipWidthPx - EDGE_SNAP_PX) startTimeSec = clipDurationSec
           if (relCurrentX < EDGE_SNAP_PX) currentTimeSec = 0
           if (relCurrentX > clipWidthPx - EDGE_SNAP_PX) currentTimeSec = clipDurationSec
+
+          // Snap to ghost playhead (play-start marker) when within range
+          const { playStartSec } = useTransportStore.getState()
+          if (playStartSec != null) {
+            const ghostClipRelSec = playStartSec - currentStartSec
+            if (ghostClipRelSec >= 0 && ghostClipRelSec <= clipDurationSec) {
+              const ghostPx = ghostClipRelSec * zoom
+              if (Math.abs(relCurrentX - ghostPx) < EDGE_SNAP_PX) currentTimeSec = ghostClipRelSec
+              if (Math.abs(relStartX - ghostPx) < EDGE_SNAP_PX) startTimeSec = ghostClipRelSec
+            }
+          }
           setRangeSelection({
             clipId,
             trackId,

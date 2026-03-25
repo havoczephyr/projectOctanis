@@ -539,13 +539,16 @@ export function FadeGainEditor(): React.ReactElement | null {
                     key={point.id}
                     transform={`translate(${cx}, ${cy})`}
                     style={glowRadius > 0 ? { filter: `drop-shadow(0 0 ${glowRadius}px ${trackColor})` } : undefined}
-                    className={styles.duckPoint}
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      handleRemoveDuckGroup(point.id)
-                    }}
                   >
-                    {duckySvgPaths(18)}
+                    <g
+                      className={styles.duckPoint}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        handleRemoveDuckGroup(point.id)
+                      }}
+                    >
+                      {duckySvgPaths(18)}
+                    </g>
                   </g>
                 )
               }

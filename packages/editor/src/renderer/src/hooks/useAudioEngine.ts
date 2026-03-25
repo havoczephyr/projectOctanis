@@ -39,6 +39,8 @@ export function useAudioEngine(): { analyser: AnalyserNode | undefined } {
   const ctxRef = useRef<AudioContext | null>(null)
   const analyserRef = useRef<AnalyserNode | null>(null)
   const sourcesRef = useRef<AudioBufferSourceNode[]>([])
+  const trackGainNodesRef = useRef<Map<string, GainNode>>(new Map())
+  const masterGainNodeRef = useRef<GainNode | null>(null)
   const startWallTimeRef = useRef<number>(0)
   const startPlayheadRef = useRef<number>(0)
   const rafRef = useRef<number | undefined>(undefined)
@@ -56,6 +58,25 @@ export function useAudioEngine(): { analyser: AnalyserNode | undefined } {
       analyserRef.current = analyser
     }
     return ctxRef.current
+  }
+
+  function getMasterGainNode(): GainNode {
+    const ctx = getCtx()
+    if (masterGainNodeRef.current) return masterGainNodeRef.current
+    const node = ctx.createGain()
+    node.connect(analyserRef.current ?? ctx.destination)
+    masterGainNodeRef.current = node
+    return node
+  }
+
+  function getTrackGainNode(trackId: string): GainNode {
+    const ctx = getCtx()
+    const existing = trackGainNodesRef.current.get(trackId)
+    if (existing) return existing
+    const node = ctx.createGain()
+    node.connect(getMasterGainNode())
+    trackGainNodesRef.current.set(trackId, node)
+    return node
   }
 
   function stopAll(): void {
@@ -85,9 +106,12 @@ export function useAudioEngine(): { analyser: AnalyserNode | undefined } {
 
     const { tracks, masterVolume } = projectFile.project
     const audioFiles = projectFile.audioFiles
+    getMasterGainNode().gain.value = masterVolume
 
     for (const track of tracks) {
       if (track.muted) { console.debug('[Octanis:Audio] skipping muted track', track.id); continue }
+      const trackGainNode = getTrackGainNode(track.id)
+      trackGainNode.gain.value = track.volume
 
       for (const clip of track.clips) {
         const audioFile = audioFiles[clip.audioFileId]
@@ -106,7 +130,7 @@ export function useAudioEngine(): { analyser: AnalyserNode | undefined } {
 
         try {
           const buffer = await getAudioBuffer(ctx, audioFile.absolutePath, clip.audioFileId)
-          const baseGainValue = clip.volume * track.volume * masterVolume
+          const baseGainValue = clip.volume
 
           /** Schedule a source segment with its own gain node, applying fade/mute/duck automation */
           function scheduleSegment(
@@ -125,7 +149,7 @@ export function useAudioEngine(): { analyser: AnalyserNode | undefined } {
             const gainNode = ctx.createGain()
             gainNode.gain.value = baseGainValue
             source.connect(gainNode)
-            gainNode.connect(analyserRef.current ?? ctx.destination)
+            gainNode.connect(trackGainNode)
 
             if (applyAutomation) {
               // Apply fade regions via multi-point interpolation
@@ -139,7 +163,7 @@ export function useAudioEngine(): { analyser: AnalyserNode | undefined } {
                   const tAtPlayhead = (fromSec - regionClipStart) / regionDuration
                   const regionGainAtPlayhead = interpolateFadeRegionGain(region, tAtPlayhead)
                   gainNode.gain.setValueAtTime(
-                    regionGainAtPlayhead * clip.volume * track.volume * masterVolume,
+                    regionGainAtPlayhead * clip.volume,
                     ctx.currentTime
                   )
                 }
@@ -156,7 +180,7 @@ export function useAudioEngine(): { analyser: AnalyserNode | undefined } {
                   const absTime = ctx.currentTime + (clip.startSec + timeSec - fromSec)
                   if (absTime < ctx.currentTime) continue
                   const regionGain = interpolateFadeRegionGain(region, t)
-                  gainNode.gain.setValueAtTime(regionGain * clip.volume * track.volume * masterVolume, absTime)
+                  gainNode.gain.setValueAtTime(regionGain * clip.volume, absTime)
                 }
 
                 for (const cp of region.controlPoints) {
@@ -164,7 +188,7 @@ export function useAudioEngine(): { analyser: AnalyserNode | undefined } {
                   const cpTimeSec = region.startSec + cp.x * regionDuration
                   const cpAbsTime = ctx.currentTime + (clip.startSec + cpTimeSec - fromSec)
                   if (cpAbsTime < ctx.currentTime) continue
-                  gainNode.gain.setValueAtTime(cp.gain * clip.volume * track.volume * masterVolume, cpAbsTime)
+                  gainNode.gain.setValueAtTime(cp.gain * clip.volume, cpAbsTime)
                 }
               }
 
@@ -180,7 +204,7 @@ export function useAudioEngine(): { analyser: AnalyserNode | undefined } {
                 if (muteEndAbs >= ctx.currentTime) {
                   const restoreGain = interpolateFadeRegions(
                     clip.fadeRegions, muteRegion.endSec, clip.volume
-                  ) * track.volume * masterVolume
+                  )
                   gainNode.gain.setValueAtTime(restoreGain, muteEndAbs)
                 }
               }
@@ -272,6 +296,48 @@ export function useAudioEngine(): { analyser: AnalyserNode | undefined } {
     )
     return unsub
   }, [schedulePlayback])
+
+  // Live track volume/mute updates — no re-scheduling needed
+  useEffect(() => {
+    const unsub = useProjectStore.subscribe(
+      (s) => s.projectFile.project.tracks.map((t) => ({ id: t.id, volume: t.volume, muted: t.muted })),
+      (trackStates) => {
+        for (const ts of trackStates) {
+          const node = trackGainNodesRef.current.get(ts.id)
+          if (node) node.gain.value = ts.muted ? 0 : ts.volume
+        }
+      }
+    )
+    return unsub
+  }, [])
+
+  // Live master volume updates
+  useEffect(() => {
+    const unsub = useProjectStore.subscribe(
+      (s) => s.projectFile.project.masterVolume,
+      (mv) => {
+        if (masterGainNodeRef.current) masterGainNodeRef.current.gain.value = mv
+      }
+    )
+    return unsub
+  }, [])
+
+  // Clean up gain nodes for removed tracks
+  useEffect(() => {
+    const unsub = useProjectStore.subscribe(
+      (s) => s.projectFile.project.tracks.map((t) => t.id),
+      (trackIds) => {
+        const currentIds = new Set(trackIds)
+        for (const [id, node] of trackGainNodesRef.current) {
+          if (!currentIds.has(id)) {
+            node.disconnect()
+            trackGainNodesRef.current.delete(id)
+          }
+        }
+      }
+    )
+    return unsub
+  }, [])
 
   return { analyser: analyserRef.current ?? undefined }
 }

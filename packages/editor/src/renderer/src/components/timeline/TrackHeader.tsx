@@ -8,9 +8,17 @@ interface Props {
   height: number
 }
 
+const VOLUME_SNAP_THRESHOLD = 0.04
+
 export function TrackHeader({ track, height }: Props): React.ReactElement {
   const updateTrack = useProjectStore((s) => s.updateTrack)
   const removeTrack = useProjectStore((s) => s.removeTrack)
+
+  function handleVolumeChange(e: React.ChangeEvent<HTMLInputElement>): void {
+    let vol = parseFloat(e.target.value)
+    if (Math.abs(vol - 1.0) <= VOLUME_SNAP_THRESHOLD) vol = 1.0
+    updateTrack(track.id, { volume: vol })
+  }
 
   return (
     <div
@@ -51,16 +59,19 @@ export function TrackHeader({ track, height }: Props): React.ReactElement {
             ✕
           </button>
         </div>
-        <input
-          className={styles.volumeSlider}
-          type="range"
-          min={0}
-          max={2}
-          step={0.01}
-          value={track.volume}
-          onChange={(e) => updateTrack(track.id, { volume: parseFloat(e.target.value) })}
-          title={`Volume: ${Math.round(track.volume * 100)}%`}
-        />
+        <div className={styles.volumeRow}>
+          <input
+            className={styles.volumeSlider}
+            type="range"
+            min={0}
+            max={2}
+            step={0.01}
+            value={track.volume}
+            onChange={handleVolumeChange}
+            title={`Volume: ${Math.round(track.volume * 100)}%`}
+          />
+          <span className={styles.volumeLabel}>{Math.round(track.volume * 100)}%</span>
+        </div>
       </div>
     </div>
   )
