@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
 import { useProjectStore } from '../../store/projectStore'
 import { useRecentProjectsStore, type RecentProject } from '../../store/recentProjectsStore'
+import { discoverAudioFiles } from '../../utils/discoverAudioFiles'
 import styles from './SplashScreen.module.css'
 
 export function SplashScreen(): React.ReactElement {
@@ -36,6 +37,7 @@ export function SplashScreen(): React.ReactElement {
     if (!result) return
     addRecent(result.projectFile.project.meta.title, result.filePath)
     setProject(result.projectFile, result.filePath)
+    discoverAudioFiles(result.filePath)
   }
 
   async function handleOpenRecent(recent: RecentProject): Promise<void> {
@@ -48,6 +50,7 @@ export function SplashScreen(): React.ReactElement {
       }
       addRecent(projectFile.project.meta.title, recent.filePath)
       setProject(projectFile, recent.filePath)
+      discoverAudioFiles(recent.filePath)
     } catch (err) {
       setError(`Failed to open project: ${err instanceof Error ? err.message : String(err)}`)
     }
@@ -74,7 +77,7 @@ export function SplashScreen(): React.ReactElement {
         <div className={styles.header}>
           <div className={styles.title}>OCTANIS</div>
           <div className={styles.subtitle}>audio production environment</div>
-          <div className={styles.version}>v0.0.11 — Kinetic Keystone</div>
+          <div className={styles.version}>v0.0.11 — Astral Kestrel</div>
         </div>
 
         {/* New Project Form or Action Buttons */}

@@ -4,6 +4,7 @@ import { useRecentProjectsStore } from '../store/recentProjectsStore'
 import { useUiStore } from '../store/uiStore'
 import { saveProject } from '../utils/saveProject'
 import { confirmUnsavedChanges } from '../utils/confirmUnsavedChanges'
+import { discoverAudioFiles } from '../utils/discoverAudioFiles'
 
 export function useMenuActions(): void {
   useEffect(() => {
@@ -25,6 +26,7 @@ export function useMenuActions(): void {
           result.filePath
         )
         useProjectStore.getState().setProject(result.projectFile, result.filePath)
+        discoverAudioFiles(result.filePath)
       }
     })
     const cleanupFileSave = window.octanis.menu.onFileSave(async () => {
@@ -37,6 +39,11 @@ export function useMenuActions(): void {
       if (!(await confirmUnsavedChanges())) return
       useProjectStore.getState().closeProject()
     })
+    const cleanupWindowClose = window.octanis.window.onCloseRequested(async () => {
+      if (await confirmUnsavedChanges()) {
+        window.octanis.window.confirmClose()
+      }
+    })
     return () => {
       cleanupUndo()
       cleanupRedo()
@@ -45,6 +52,7 @@ export function useMenuActions(): void {
       cleanupFileSave()
       cleanupFileSaveAs()
       cleanupFileClose()
+      cleanupWindowClose()
     }
   }, [])
 }

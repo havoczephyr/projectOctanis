@@ -1,8 +1,10 @@
 import { ipcMain, dialog, BrowserWindow } from 'electron'
-import { readFile, writeFile } from 'fs/promises'
-import { join } from 'path'
-import { OctanisProjectFileSchema, type OctanisProjectFile } from '@octanis/shared'
+import { readFile, writeFile, readdir, stat } from 'fs/promises'
+import { join, dirname } from 'path'
+import { OctanisProjectFileSchema, type OctanisProjectFile, type AudioFile } from '@octanis/shared'
 import log from 'electron-log'
+import { inspectAudio } from '../ffmpeg/inspect'
+import { AUDIO_EXTENSIONS } from './fs'
 
 export function registerFileHandlers(): void {
   ipcMain.handle(
@@ -150,6 +152,43 @@ export function registerFileHandlers(): void {
       } catch (err) {
         log.error('file:openByPath error', err)
         return null
+      }
+    }
+  )
+
+  ipcMain.handle(
+    'file:discoverAudioFiles',
+    async (_event, projectFilePath: string, existingIds: string[]): Promise<AudioFile[]> => {
+      try {
+        const audioDir = join(dirname(projectFilePath), 'audio')
+        const dirStat = await stat(audioDir).catch(() => null)
+        if (!dirStat?.isDirectory()) return []
+
+        const entries = await readdir(audioDir)
+        const existingPaths = new Set(existingIds)
+        const discovered: AudioFile[] = []
+
+        for (const name of entries) {
+          if (name.startsWith('.')) continue
+          const ext = name.slice(name.lastIndexOf('.')).toLowerCase()
+          if (!AUDIO_EXTENSIONS.has(ext)) continue
+
+          const fullPath = join(audioDir, name)
+          // Skip if this path is already registered
+          if (existingPaths.has(fullPath)) continue
+
+          try {
+            const audioFile = await inspectAudio(fullPath)
+            discovered.push(audioFile)
+          } catch (err) {
+            log.warn('file:discoverAudioFiles skip', name, err)
+          }
+        }
+
+        return discovered
+      } catch (err) {
+        log.error('file:discoverAudioFiles error', err)
+        return []
       }
     }
   )
