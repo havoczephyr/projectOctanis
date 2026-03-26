@@ -1,0 +1,104 @@
+/* ─── Dark Theme (default) ──────────────────────────────────────────────────── */
+:root,
+:root[data-theme='dark'] {
+  --bg-void: #080c14;
+  --bg-deep: #0d1525;
+  --bg-panel: rgba(10, 18, 35, 0.28);
+  --bg-panel-hover: rgba(15, 28, 55, 0.40);
+  --bg-panel-active: rgba(20, 38, 72, 0.52);
+  --bg-input: rgba(255, 255, 255, 0.07);
+  --bg-clip: rgba(0, 255, 204, 0.10);
+  --bg-clip-selected: rgba(0, 255, 204, 0.20);
+
+  --border: rgba(0, 255, 204, 0.25);
+  --border-glow: #00ffcc;
+  --border-subtle: rgba(255, 255, 255, 0.08);
+
+  --accent-cyan: #00ffcc;
+  --accent-green: #39ff14;
+  --accent-magenta: #ff00ff;
+  --accent-orange: #ff6b35;
+  --accent-blue: #00bfff;
+  --accent-yellow: #ffe600;
+  --accent-pink: #ff3366;
+  --accent-purple: #9b59b6;
+
+  --text-primary: #e0f0ff;
+  --text-secondary: #7aa0c0;
+  --text-dim: #3a5a7a;
+  --text-accent: #00ffcc;
+
+  --playhead: #ff3366;
+  --ruler-bg: rgba(5, 10, 22, 0.32);
+  --ruler-text: #3a6a8a;
+  --ruler-mark: rgba(0, 255, 204, 0.4);
+  --ruler-mark-major: rgba(0, 255, 204, 0.8);
+
+  --track-header-bg: rgba(8, 14, 28, 0.28);
+  --timeline-bg: rgba(6, 10, 20, 0.22);
+  --timeline-grid: rgba(255, 255, 255, 0.04);
+
+  --scrollbar-thumb: rgba(0, 255, 204, 0.3);
+  --scrollbar-track: rgba(255, 255, 255, 0.03);
+
+  --font-mono: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', 'Courier New', monospace;
+  --font-ui: var(--font-mono);
+
+  --shadow-glow: 0 0 8px var(--border-glow), 0 0 20px rgba(0, 255, 204, 0.15);
+  --shadow-panel: 0 4px 24px rgba(0, 0, 0, 0.6);
+  --shadow-clip: 0 2px 12px rgba(0, 0, 0, 0.5);
+
+  --radius-sm: 3px;
+  --radius-md: 6px;
+  --radius-lg: 10px;
+
+  --transition-fast: 100ms ease;
+  --transition-med: 200ms ease;
+}
+
+/* ─── Light Theme ─────────────────────────────────────────────────────────── */
+:root[data-theme='light'] {
+  --bg-void: #d0e0f0;
+  --bg-deep: #c8d8eb;
+  --bg-panel: rgba(210, 228, 245, 0.82);
+  --bg-panel-hover: rgba(198, 218, 238, 0.9);
+  --bg-panel-active: rgba(185, 210, 235, 0.95);
+  --bg-input: rgba(0, 0, 0, 0.06);
+  --bg-clip: rgba(0, 80, 180, 0.12);
+  --bg-clip-selected: rgba(0, 80, 180, 0.22);
+
+  --border: rgba(0, 80, 160, 0.3);
+  --border-glow: #0066cc;
+  --border-subtle: rgba(0, 0, 0, 0.1);
+
+  --accent-cyan: #0077bb;
+  --accent-green: #006633;
+  --accent-magenta: #880055;
+  --accent-orange: #cc4400;
+  --accent-blue: #0055aa;
+  --accent-yellow: #886600;
+  --accent-pink: #cc2244;
+  --accent-purple: #6633aa;
+
+  --text-primary: #0a1a2a;
+  --text-secondary: #3a5a7a;
+  --text-dim: #8aaac8;
+  --text-accent: #0066cc;
+
+  --playhead: #cc2244;
+  --ruler-bg: rgba(200, 218, 235, 0.95);
+  --ruler-text: #6a8aaa;
+  --ruler-mark: rgba(0, 80, 160, 0.4);
+  --ruler-mark-major: rgba(0, 80, 160, 0.85);
+
+  --track-header-bg: rgba(195, 215, 232, 0.88);
+  --timeline-bg: rgba(205, 222, 238, 0.98);
+  --timeline-grid: rgba(0, 0, 0, 0.04);
+
+  --scrollbar-thumb: rgba(0, 80, 160, 0.35);
+  --scrollbar-track: rgba(0, 0, 0, 0.05);
+
+  --shadow-glow: 0 0 8px rgba(0, 102, 204, 0.5);
+  --shadow-panel: 0 4px 24px rgba(0, 0, 0, 0.15);
+  --shadow-clip: 0 2px 12px rgba(0, 0, 0, 0.15);
+}

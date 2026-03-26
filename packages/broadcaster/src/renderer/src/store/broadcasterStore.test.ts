@@ -1,0 +1,147 @@
+import { describe, it, expect, beforeEach } from 'vitest'
+import { useBroadcasterStore } from './broadcasterStore'
+import type { OctanisProjectFile } from '@octanis/shared'
+
+function makeProject(): OctanisProjectFile {
+  return {
+    version: '0.1.0',
+    audioFiles: {},
+    project: {
+      meta: { title: 'Test', bpm: 120 },
+      durationSec: 60,
+      tracks: [],
+    },
+  } as OctanisProjectFile
+}
+
+describe('broadcasterStore', () => {
+  beforeEach(() => {
+    // Reset to initial state
+    useBroadcasterStore.setState({
+      projectFile: null,
+      currentFilePath: null,
+      transportState: 'stopped',
+      playheadSec: 0,
+      streamStatus: { running: false, port: 8080, format: 'mp3', listenerCount: 0, uptimeSec: 0 },
+      micActive: false,
+      micDuckAmount: 0.7,
+      micThreshold: -30,
+      duckAttackMs: 50,
+      duckReleaseMs: 300,
+    })
+  })
+
+  describe('project', () => {
+    it('sets project and file path', () => {
+      const project = makeProject()
+      useBroadcasterStore.getState().setProject(project, '/test/path.octanis.json')
+
+      const state = useBroadcasterStore.getState()
+      expect(state.projectFile).toBe(project)
+      expect(state.currentFilePath).toBe('/test/path.octanis.json')
+    })
+
+    it('clears project and resets transport', () => {
+      useBroadcasterStore.getState().setProject(makeProject(), '/test/path.octanis.json')
+      useBroadcasterStore.getState().play()
+      useBroadcasterStore.getState().setPlayhead(42)
+
+      useBroadcasterStore.getState().clearProject()
+
+      const state = useBroadcasterStore.getState()
+      expect(state.projectFile).toBeNull()
+      expect(state.currentFilePath).toBeNull()
+      expect(state.transportState).toBe('stopped')
+      expect(state.playheadSec).toBe(0)
+    })
+  })
+
+  describe('transport', () => {
+    it('starts in stopped state', () => {
+      expect(useBroadcasterStore.getState().transportState).toBe('stopped')
+    })
+
+    it('transitions to playing', () => {
+      useBroadcasterStore.getState().play()
+      expect(useBroadcasterStore.getState().transportState).toBe('playing')
+    })
+
+    it('transitions to paused', () => {
+      useBroadcasterStore.getState().play()
+      useBroadcasterStore.getState().pause()
+      expect(useBroadcasterStore.getState().transportState).toBe('paused')
+    })
+
+    it('stop resets to stopped and clears playhead', () => {
+      useBroadcasterStore.getState().play()
+      useBroadcasterStore.getState().setPlayhead(30)
+      useBroadcasterStore.getState().stop()
+
+      const state = useBroadcasterStore.getState()
+      expect(state.transportState).toBe('stopped')
+      expect(state.playheadSec).toBe(0)
+    })
+
+    it('sets playhead position', () => {
+      useBroadcasterStore.getState().setPlayhead(15.5)
+      expect(useBroadcasterStore.getState().playheadSec).toBe(15.5)
+    })
+  })
+
+  describe('stream status', () => {
+    it('starts with default offline status', () => {
+      const status = useBroadcasterStore.getState().streamStatus
+      expect(status.running).toBe(false)
+      expect(status.port).toBe(8080)
+      expect(status.format).toBe('mp3')
+      expect(status.listenerCount).toBe(0)
+    })
+
+    it('updates stream status', () => {
+      useBroadcasterStore.getState().setStreamStatus({
+        running: true,
+        port: 9090,
+        format: 'opus',
+        listenerCount: 5,
+        uptimeSec: 120,
+      })
+
+      const status = useBroadcasterStore.getState().streamStatus
+      expect(status.running).toBe(true)
+      expect(status.port).toBe(9090)
+      expect(status.format).toBe('opus')
+      expect(status.listenerCount).toBe(5)
+      expect(status.uptimeSec).toBe(120)
+    })
+  })
+
+  describe('microphone settings', () => {
+    it('toggles mic active', () => {
+      useBroadcasterStore.getState().setMicActive(true)
+      expect(useBroadcasterStore.getState().micActive).toBe(true)
+
+      useBroadcasterStore.getState().setMicActive(false)
+      expect(useBroadcasterStore.getState().micActive).toBe(false)
+    })
+
+    it('sets duck amount', () => {
+      useBroadcasterStore.getState().setMicDuckAmount(0.5)
+      expect(useBroadcasterStore.getState().micDuckAmount).toBe(0.5)
+    })
+
+    it('sets threshold', () => {
+      useBroadcasterStore.getState().setMicThreshold(-20)
+      expect(useBroadcasterStore.getState().micThreshold).toBe(-20)
+    })
+
+    it('sets duck attack', () => {
+      useBroadcasterStore.getState().setDuckAttackMs(100)
+      expect(useBroadcasterStore.getState().duckAttackMs).toBe(100)
+    })
+
+    it('sets duck release', () => {
+      useBroadcasterStore.getState().setDuckReleaseMs(500)
+      expect(useBroadcasterStore.getState().duckReleaseMs).toBe(500)
+    })
+  })
+})
