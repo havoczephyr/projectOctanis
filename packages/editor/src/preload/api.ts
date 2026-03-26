@@ -17,6 +17,8 @@ export const octanisApi = {
       ipcRenderer.invoke('file:createProject', folderPath, title),
     openByPath: (filePath: string): Promise<OctanisProjectFile | null> =>
       ipcRenderer.invoke('file:openByPath', filePath),
+    discoverAudioFiles: (projectFilePath: string, existingPaths: string[]): Promise<AudioFile[]> =>
+      ipcRenderer.invoke('file:discoverAudioFiles', projectFilePath, existingPaths),
   },
   ffmpeg: {
     extractPeaks: (audioPath: string, opts: PeakOpts): Promise<PeaksResult> =>
@@ -47,6 +49,14 @@ export const octanisApi = {
   dialog: {
     showUnsavedChanges: (): Promise<'save' | 'discard' | 'cancel'> =>
       ipcRenderer.invoke('dialog:showUnsavedChanges'),
+  },
+  window: {
+    confirmClose: (): void => ipcRenderer.send('window:confirm-close'),
+    onCloseRequested: (cb: () => void): (() => void) => {
+      const handler = (): void => cb()
+      ipcRenderer.on('window:close-requested', handler)
+      return () => { ipcRenderer.removeListener('window:close-requested', handler) }
+    },
   },
   menu: {
     onUndo: (cb: () => void): (() => void) => {

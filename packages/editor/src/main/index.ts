@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Menu } from 'electron'
+import { app, BrowserWindow, Menu, ipcMain } from 'electron'
 import { join } from 'path'
 import { is } from '@electron-toolkit/utils'
 import log from 'electron-log'
@@ -7,6 +7,7 @@ import { registerIpcHandlers } from './ipc/handlers'
 log.initialize()
 
 let mainWindow: BrowserWindow | null = null
+let forceClose = false
 
 function createWindow(): void {
   mainWindow = new BrowserWindow({
@@ -106,10 +107,27 @@ function createWindow(): void {
     mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
   }
 
+  // Intercept close to check for unsaved changes
+  mainWindow.on('close', (event) => {
+    if (forceClose) return
+    event.preventDefault()
+    mainWindow?.webContents.send('window:close-requested')
+  })
+
   mainWindow.on('closed', () => {
     mainWindow = null
   })
 }
+
+// Renderer confirms it's safe to close
+ipcMain.on('window:confirm-close', () => {
+  forceClose = true
+  if (mainWindow) {
+    mainWindow.close()
+  } else {
+    app.quit()
+  }
+})
 
 app.whenReady().then(() => {
   createWindow()

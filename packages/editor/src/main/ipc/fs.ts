@@ -6,7 +6,7 @@ import type { FileEntry } from '../../ipcTypes'
 
 export type { FileEntry }
 
-const AUDIO_EXTENSIONS = new Set(['.mp3', '.wav', '.flac', '.ogg', '.aac', '.m4a', '.opus', '.wma'])
+export const AUDIO_EXTENSIONS = new Set(['.mp3', '.wav', '.flac', '.ogg', '.aac', '.m4a', '.opus', '.wma'])
 
 function isAudioFile(name: string): boolean {
   const ext = name.slice(name.lastIndexOf('.')).toLowerCase()
