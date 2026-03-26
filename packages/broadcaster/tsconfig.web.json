@@ -1,0 +1,15 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "composite": true,
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "outDir": "out",
+    "types": ["vite/client"]
+  },
+  "include": [
+    "src/ipcTypes.ts",
+    "src/renderer/src/**/*",
+    "src/renderer/index.html"
+  ]
+}

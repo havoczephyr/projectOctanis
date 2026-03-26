@@ -1,0 +1,74 @@
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body,
+#root {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg-void);
+}
+
+body {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-primary);
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+}
+
+/* --- Scanline drift --- */
+@keyframes scanline-drift {
+  0%   { transform: translateY(-100vh); }
+  100% { transform: translateY(200vh); }
+}
+
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background: linear-gradient(
+    to bottom,
+    transparent 45%,
+    rgba(0, 255, 204, 0.014) 50%,
+    transparent 55%
+  );
+  pointer-events: none;
+  animation: scanline-drift 14s linear infinite;
+  z-index: 9999;
+}
+
+/* --- Custom Scrollbars --- */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: var(--scrollbar-track);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--border-glow);
+}
+
+::selection {
+  background: rgba(0, 255, 204, 0.25);
+}
+
+html[data-ui-intensity="balanced"] body::after,
+html[data-ui-intensity="low"] body::after {
+  content: none;
+}
+
+canvas {
+  contain: strict;
+}
