@@ -107,7 +107,8 @@ export function useAudioEngine(): AudioEngineResult {
 
     const { tracks, masterVolume } = projectFile.project
     const audioFiles = projectFile.audioFiles
-    if (masterGainRef.current) masterGainRef.current.gain.value = masterVolume
+    const bcastVol = useBroadcasterStore.getState().masterVolume
+    if (masterGainRef.current) masterGainRef.current.gain.value = masterVolume * bcastVol
 
     for (const track of tracks) {
       if (track.muted) continue
@@ -250,6 +251,19 @@ export function useAudioEngine(): AudioEngineResult {
       stopAll()
     }
   }, [transportState, schedulePlayback])
+
+  // React to broadcaster master volume changes
+  const broadcasterVolume = useBroadcasterStore((s) => s.masterVolume)
+  useEffect(() => {
+    if (masterGainRef.current) {
+      const projectVol = useBroadcasterStore.getState().projectFile?.project?.masterVolume ?? 1.0
+      masterGainRef.current.gain.setTargetAtTime(
+        projectVol * broadcasterVolume,
+        masterGainRef.current.context.currentTime,
+        0.015
+      )
+    }
+  }, [broadcasterVolume])
 
   return {
     analyser: analyserRef.current ?? undefined,

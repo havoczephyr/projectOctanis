@@ -21,6 +21,10 @@ interface BroadcasterStore {
   streamStatus: StreamStatus
   setStreamStatus: (status: StreamStatus) => void
 
+  // Volume
+  masterVolume: number
+  setMasterVolume: (vol: number) => void
+
   // Microphone
   micActive: boolean
   micDuckAmount: number
@@ -52,6 +56,10 @@ export const useBroadcasterStore = create<BroadcasterStore>((set) => ({
   // Stream
   streamStatus: { running: false, port: 8080, format: 'mp3', listenerCount: 0, uptimeSec: 0 },
   setStreamStatus: (status) => set({ streamStatus: status }),
+
+  // Volume
+  masterVolume: 1.0,
+  setMasterVolume: (vol) => set({ masterVolume: Math.max(0, Math.min(1, vol)) }),
 
   // Microphone
   micActive: false,

@@ -23,6 +23,7 @@ describe('broadcasterStore', () => {
       transportState: 'stopped',
       playheadSec: 0,
       streamStatus: { running: false, port: 8080, format: 'mp3', listenerCount: 0, uptimeSec: 0 },
+      masterVolume: 1.0,
       micActive: false,
       micDuckAmount: 0.7,
       micThreshold: -30,
@@ -112,6 +113,24 @@ describe('broadcasterStore', () => {
       expect(status.format).toBe('opus')
       expect(status.listenerCount).toBe(5)
       expect(status.uptimeSec).toBe(120)
+    })
+  })
+
+  describe('master volume', () => {
+    it('defaults to 1.0', () => {
+      expect(useBroadcasterStore.getState().masterVolume).toBe(1.0)
+    })
+
+    it('sets volume', () => {
+      useBroadcasterStore.getState().setMasterVolume(0.5)
+      expect(useBroadcasterStore.getState().masterVolume).toBe(0.5)
+    })
+
+    it('clamps to 0-1', () => {
+      useBroadcasterStore.getState().setMasterVolume(-0.5)
+      expect(useBroadcasterStore.getState().masterVolume).toBe(0)
+      useBroadcasterStore.getState().setMasterVolume(1.5)
+      expect(useBroadcasterStore.getState().masterVolume).toBe(1)
     })
   })
 

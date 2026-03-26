@@ -6,6 +6,7 @@ import { Spectrograph } from './components/Spectrograph'
 import { ControlPanel } from './components/ControlPanel'
 import { WaveformPanel } from './components/WaveformPanel'
 import { useMicrophone } from './hooks/useMicrophone'
+import { VolumeOverlay } from './components/VolumeOverlay'
 
 export default function App(): JSX.Element {
   const theme = useUiStore((s) => s.theme)
@@ -61,6 +62,16 @@ export default function App(): JSX.Element {
       }
       if (e.code === 'Escape') {
         stop()
+      }
+      if (e.code === 'ArrowUp') {
+        e.preventDefault()
+        const cur = useBroadcasterStore.getState().masterVolume
+        useBroadcasterStore.getState().setMasterVolume(cur + 1 / 16)
+      }
+      if (e.code === 'ArrowDown') {
+        e.preventDefault()
+        const cur = useBroadcasterStore.getState().masterVolume
+        useBroadcasterStore.getState().setMasterVolume(cur - 1 / 16)
       }
     }
     window.addEventListener('keydown', handler)
@@ -168,6 +179,8 @@ export default function App(): JSX.Element {
               </div>
             )}
           </div>
+          {/* Volume OSD */}
+          <VolumeOverlay />
           {/* Power LED */}
           <div className={`crt-led crt-led--${transportState}`} />
         </div>
