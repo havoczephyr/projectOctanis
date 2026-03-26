@@ -1,10 +1,11 @@
-import { useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useUiStore } from './store/uiStore'
 import { useBroadcasterStore } from './store/broadcasterStore'
 import { useAudioEngine } from './hooks/useAudioEngine'
 import { useWebRTCPublisher } from './hooks/useWebRTCPublisher'
 import { Spectrograph } from './components/Spectrograph'
 import { ControlPanel } from './components/ControlPanel'
+import { SfuConfigModal } from './components/SfuConfigModal'
 import { WaveformPanel } from './components/WaveformPanel'
 import { useMicrophone } from './hooks/useMicrophone'
 import { VolumeOverlay } from './components/VolumeOverlay'
@@ -25,9 +26,18 @@ export default function App(): JSX.Element {
   const pause = useBroadcasterStore((s) => s.pause)
   const stop = useBroadcasterStore((s) => s.stop)
 
+  const [configOpen, setConfigOpen] = useState(false)
+
   const { analyser, musicGainNode, masterGainNode } = useAudioEngine()
   useMicrophone(musicGainNode, masterGainNode)
   const { connect: sfuConnect, disconnect: sfuDisconnect } = useWebRTCPublisher(masterGainNode)
+
+  // Connect using stored config
+  const handleConnect = useCallback(async () => {
+    const config = useBroadcasterStore.getState().sfuConfig
+    if (!config) return
+    await sfuConnect(config)
+  }, [sfuConnect])
 
   // Sync theme + intensity to <html>
   useEffect(() => {
@@ -125,7 +135,11 @@ export default function App(): JSX.Element {
             <div className="glow-text" style={{ fontSize: 10, marginBottom: 8, letterSpacing: '0.1em' }}>
               CONTROLS
             </div>
-            <ControlPanel onConnect={sfuConnect} onDisconnect={sfuDisconnect} />
+            <ControlPanel
+              onConnect={handleConnect}
+              onDisconnect={sfuDisconnect}
+              onOpenConfig={() => setConfigOpen(true)}
+            />
           </div>
         </div>
 
@@ -279,6 +293,9 @@ export default function App(): JSX.Element {
           </span>
         )}
       </div>
+
+      {/* ─── SFU Config Modal ─── */}
+      <SfuConfigModal open={configOpen} onClose={() => setConfigOpen(false)} />
     </div>
   )
 }

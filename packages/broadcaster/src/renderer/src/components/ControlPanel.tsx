@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useBroadcasterStore } from '../store/broadcasterStore'
 import { VolumeKnob } from './VolumeKnob'
-import type { SfuConfig, SfuConnectionState } from '../../../ipcTypes'
+import type { SfuConnectionState } from '../../../ipcTypes'
 
 const STATE_COLORS: Record<SfuConnectionState, string> = {
   disconnected: 'var(--text-dim)',
@@ -20,21 +20,19 @@ const STATE_LABELS: Record<SfuConnectionState, string> = {
 }
 
 interface ControlPanelProps {
-  onConnect: (config: SfuConfig) => Promise<void>
+  onConnect: () => Promise<void>
   onDisconnect: () => Promise<void>
+  onOpenConfig: () => void
 }
 
-export function ControlPanel({ onConnect, onDisconnect }: ControlPanelProps): JSX.Element {
+export function ControlPanel({ onConnect, onDisconnect, onOpenConfig }: ControlPanelProps): JSX.Element {
   const micActive = useBroadcasterStore((s) => s.micActive)
   const setMicActive = useBroadcasterStore((s) => s.setMicActive)
   const micDuckAmount = useBroadcasterStore((s) => s.micDuckAmount)
   const setMicDuckAmount = useBroadcasterStore((s) => s.setMicDuckAmount)
   const streamStatus = useBroadcasterStore((s) => s.streamStatus)
+  const sfuConfig = useBroadcasterStore((s) => s.sfuConfig)
 
-  const [serverUrl, setServerUrl] = useState('')
-  const [roomId, setRoomId] = useState('')
-  const [secret, setSecret] = useState('')
-  const [displayName, setDisplayName] = useState('')
   const [busy, setBusy] = useState(false)
 
   const isConnected = streamStatus.connectionState === 'connected'
@@ -47,15 +45,7 @@ export function ControlPanel({ onConnect, onDisconnect }: ControlPanelProps): JS
       if (isActive) {
         await onDisconnect()
       } else {
-        const parsed = Number(roomId)
-        if (!serverUrl || !roomId || isNaN(parsed)) return
-        await onConnect({
-          provider: 'janus',
-          serverUrl,
-          roomId: parsed,
-          secret: secret || undefined,
-          displayName: displayName || undefined,
-        })
+        await onConnect()
       }
     } catch (err) {
       console.error('[SFU]', err)
@@ -136,53 +126,28 @@ export function ControlPanel({ onConnect, onDisconnect }: ControlPanelProps): JS
       {/* Section: SFU Broadcast */}
       <div>
         <div className="glow-text" style={{ fontSize: 9, marginBottom: 6, letterSpacing: '0.12em' }}>
-          SFU BROADCAST
+          BROADCAST
         </div>
 
-        {/* Connection form */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 6 }}>
-          <input
-            type="text"
-            placeholder="wss://server/janus"
-            value={serverUrl}
-            onChange={(e) => setServerUrl(e.target.value)}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <button
+            className="btn"
+            onClick={onOpenConfig}
             disabled={isActive}
-            style={{ fontSize: 10, padding: '4px 6px' }}
-          />
-          <input
-            type="number"
-            placeholder="Room ID"
-            value={roomId}
-            onChange={(e) => setRoomId(e.target.value)}
-            disabled={isActive}
-            style={{ fontSize: 10, padding: '4px 6px' }}
-          />
-          <input
-            type="password"
-            placeholder="Secret (optional)"
-            value={secret}
-            onChange={(e) => setSecret(e.target.value)}
-            disabled={isActive}
-            style={{ fontSize: 10, padding: '4px 6px' }}
-          />
-          <input
-            type="text"
-            placeholder="Display name (optional)"
-            value={displayName}
-            onChange={(e) => setDisplayName(e.target.value)}
-            disabled={isActive}
-            style={{ fontSize: 10, padding: '4px 6px' }}
-          />
-        </div>
+            style={{ width: '100%', height: 28, fontSize: 10 }}
+          >
+            ⚙ CONFIG
+          </button>
 
-        <button
-          className={`btn${isActive ? '' : ' btn--primary'}`}
-          onClick={handleToggle}
-          disabled={busy || (!isActive && (!serverUrl || !roomId))}
-          style={{ width: '100%', height: 32, fontSize: 11 }}
-        >
-          {busy ? '...' : isActive ? '⏹ DISCONNECT' : '▶ CONNECT'}
-        </button>
+          <button
+            className={`btn${isActive ? '' : ' btn--primary'}`}
+            onClick={handleToggle}
+            disabled={busy || (!isActive && !sfuConfig)}
+            style={{ width: '100%', height: 32, fontSize: 11 }}
+          >
+            {busy ? '...' : isActive ? '⏹ DISCONNECT' : '▶ CONNECT'}
+          </button>
+        </div>
 
         {/* Status */}
         <div style={{ marginTop: 6, fontSize: 9 }}>
@@ -195,6 +160,11 @@ export function ControlPanel({ onConnect, onDisconnect }: ControlPanelProps): JS
           {isConnected && (
             <div style={{ color: 'var(--accent-green)', marginTop: 2 }}>
               {streamStatus.participantCount} participant{streamStatus.participantCount !== 1 ? 's' : ''}
+            </div>
+          )}
+          {sfuConfig && !isActive && (
+            <div style={{ color: 'var(--text-dim)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              Room {sfuConfig.roomId}
             </div>
           )}
         </div>
