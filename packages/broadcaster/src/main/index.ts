@@ -23,8 +23,6 @@ function createWindow(): void {
     },
   })
 
-  registerIpcHandlers()
-
   // Build application menu
   const isMac = process.platform === 'darwin'
   const template: Electron.MenuItemConstructorOptions[] = [
@@ -89,6 +87,7 @@ function createWindow(): void {
 }
 
 app.whenReady().then(() => {
+  registerIpcHandlers()
   createWindow()
 
   app.on('activate', () => {

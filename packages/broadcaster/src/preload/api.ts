@@ -1,6 +1,6 @@
 import { ipcRenderer } from 'electron'
 import type { OctanisProjectFile } from '@octanis/shared'
-import type { PeakOpts, PeaksResult, DecodeAudioResult, StreamStatus } from '../ipcTypes'
+import type { PeakOpts, PeaksResult, DecodeAudioResult } from '../ipcTypes'
 
 export const broadcasterApi = {
   project: {
@@ -19,14 +19,6 @@ export const broadcasterApi = {
     ): Promise<DecodeAudioResult> =>
       ipcRenderer.invoke('ffmpeg:decodeAudioFile', audioPath, sampleRate, channels),
   },
-  stream: {
-    start: (port: number, format: string): Promise<StreamStatus> =>
-      ipcRenderer.invoke('stream:start', port, format),
-    stop: (): Promise<StreamStatus> =>
-      ipcRenderer.invoke('stream:stop'),
-    getStatus: (): Promise<StreamStatus> =>
-      ipcRenderer.invoke('stream:getStatus'),
-  },
   menu: {
     onFileOpen: (cb: () => void): (() => void) => {
       const handler = (): void => cb()
@@ -43,11 +35,6 @@ export const broadcasterApi = {
       ipcRenderer.on('menu:toggle-right-cabinet', handler)
       return () => { ipcRenderer.removeListener('menu:toggle-right-cabinet', handler) }
     },
-  },
-  onStreamStatus: (cb: (status: StreamStatus) => void): (() => void) => {
-    const handler = (_e: Electron.IpcRendererEvent, status: StreamStatus): void => cb(status)
-    ipcRenderer.on('stream:status', handler)
-    return () => { ipcRenderer.removeListener('stream:status', handler) }
   },
 }
 

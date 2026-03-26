@@ -22,10 +22,25 @@ export interface DecodeAudioResult {
   channels: number
 }
 
+export type SfuConnectionState =
+  | 'disconnected'
+  | 'connecting'
+  | 'connected'
+  | 'reconnecting'
+  | 'failed'
+
+export type SfuConfig = {
+  provider: 'janus'
+  serverUrl: string
+  roomId: number
+  secret?: string
+  displayName?: string
+}
+
 export interface StreamStatus {
-  running: boolean
-  port: number
-  format: 'mp3' | 'opus'
-  listenerCount: number
+  connectionState: SfuConnectionState
+  serverUrl: string | null
+  roomName: string | null
+  participantCount: number
   uptimeSec: number
 }

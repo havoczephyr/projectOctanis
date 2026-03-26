@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import type { OctanisProjectFile } from '@octanis/shared'
-import type { StreamStatus } from '../../../ipcTypes'
+import type { StreamStatus, SfuConfig } from '../../../ipcTypes'
 
 interface BroadcasterStore {
   // Project
@@ -17,7 +17,9 @@ interface BroadcasterStore {
   stop: () => void
   setPlayhead: (sec: number) => void
 
-  // Stream
+  // SFU / Stream
+  sfuConfig: SfuConfig | null
+  setSfuConfig: (config: SfuConfig | null) => void
   streamStatus: StreamStatus
   setStreamStatus: (status: StreamStatus) => void
 
@@ -53,8 +55,10 @@ export const useBroadcasterStore = create<BroadcasterStore>((set) => ({
   stop: () => set({ transportState: 'stopped', playheadSec: 0 }),
   setPlayhead: (sec) => set({ playheadSec: sec }),
 
-  // Stream
-  streamStatus: { running: false, port: 8080, format: 'mp3', listenerCount: 0, uptimeSec: 0 },
+  // SFU / Stream
+  sfuConfig: null,
+  setSfuConfig: (config) => set({ sfuConfig: config }),
+  streamStatus: { connectionState: 'disconnected', serverUrl: null, roomName: null, participantCount: 0, uptimeSec: 0 },
   setStreamStatus: (status) => set({ streamStatus: status }),
 
   // Volume

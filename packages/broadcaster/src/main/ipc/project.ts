@@ -1,6 +1,5 @@
 import { ipcMain, dialog } from 'electron'
 import { ProjectLoader } from '../audio/ProjectLoader'
-import { setStreamProject } from './stream'
 
 export function registerProjectHandlers(): void {
   ipcMain.handle('project:open', async () => {
@@ -14,14 +13,12 @@ export function registerProjectHandlers(): void {
 
     const filePath = result.filePaths[0]
     const projectFile = await ProjectLoader.load(filePath)
-    setStreamProject(projectFile)
     return { projectFile, filePath }
   })
 
   ipcMain.handle('project:openByPath', async (_e, filePath: string) => {
     try {
       const projectFile = await ProjectLoader.load(filePath)
-      setStreamProject(projectFile)
       return projectFile
     } catch {
       return null

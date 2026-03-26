@@ -58,25 +58,29 @@ export function useAudioEngine(): AudioEngineResult {
   const transportState = useBroadcasterStore((s) => s.transportState)
   const setPlayhead = useBroadcasterStore((s) => s.setPlayhead)
 
-  function getCtx(): AudioContext {
+  // Eagerly init AudioContext so masterGainNode is always available (e.g. for SFU capture)
+  useEffect(() => {
     if (!ctxRef.current) {
-      ctxRef.current = new AudioContext({ latencyHint: 'playback' })
-      const analyser = ctxRef.current.createAnalyser()
+      const ctx = new AudioContext({ latencyHint: 'playback' })
+      ctxRef.current = ctx
+
+      const analyser = ctx.createAnalyser()
       analyser.fftSize = 256
-      analyser.connect(ctxRef.current.destination)
+      analyser.connect(ctx.destination)
       analyserRef.current = analyser
 
-      // Master gain → analyser
-      const masterGain = ctxRef.current.createGain()
+      const masterGain = ctx.createGain()
       masterGain.connect(analyser)
       masterGainRef.current = masterGain
 
-      // Music gain → master (duck target)
-      const musicGain = ctxRef.current.createGain()
+      const musicGain = ctx.createGain()
       musicGain.connect(masterGain)
       musicGainRef.current = musicGain
     }
-    return ctxRef.current
+  }, [])
+
+  function getCtx(): AudioContext {
+    return ctxRef.current!
   }
 
   function getTrackGainNode(trackId: string): GainNode {

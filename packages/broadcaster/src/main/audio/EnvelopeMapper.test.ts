@@ -220,6 +220,63 @@ describe('EnvelopeMapper', () => {
       expect(filters).toHaveLength(1)
     })
 
+    it('produces compact expression for long flat fade region', () => {
+      // A 20-second region at constant gain should NOT generate hundreds of
+      // terms — mergeConstantSegments collapses it down
+      const clip = makeClip({
+        fadeRegions: [
+          {
+            id: 'fr-flat',
+            startSec: 0,
+            endSec: 20,
+            startGain: 0.6,
+            endGain: 0.6,
+            controlPoints: [
+              { id: 'cp-1', x: 0.5, gain: 0.6 }, // forces Hermite sampling path
+            ],
+          },
+        ],
+      })
+      const filters = EnvelopeMapper.buildFilters(clip, 20, 0)
+      expect(filters).toHaveLength(1)
+
+      // Flat region should collapse to very few terms (not hundreds)
+      const termCount = (filters[0].match(/gte\(t,/g) || []).length
+      expect(termCount).toBeLessThan(10)
+    })
+
+    it('uses flat sum-of-products for complex curves (no deep nesting)', () => {
+      // Many control points that produce distinct gain values at every sample
+      const controlPoints = Array.from({ length: 20 }, (_, i) => ({
+        id: `cp-${i}`,
+        x: (i + 1) / 22, // spread across 0..1
+        gain: Math.sin(i * 0.5) * 0.4 + 0.5,
+      }))
+      const clip = makeClip({
+        fadeRegions: [
+          {
+            id: 'fr-complex',
+            startSec: 0,
+            endSec: 20,
+            startGain: 0,
+            endGain: 1,
+            controlPoints,
+          },
+        ],
+      })
+      const filters = EnvelopeMapper.buildFilters(clip, 20, 0)
+      expect(filters).toHaveLength(1)
+
+      // Uses flat gte()*lt() terms, NOT nested if(lt(t,...), ..., if(...))
+      expect(filters[0]).toContain('gte(t,')
+      expect(filters[0]).toContain('lte(t,') // last segment uses lte
+
+      // Verify no deep if-nesting: count consecutive 'if(' without closing
+      // The only if should be the outer between() wrapper
+      const ifCount = (filters[0].match(/if\(/g) || []).length
+      expect(ifCount).toBe(1) // just the outer if(between(...))
+    })
+
     it('multiplies multiple fade regions', () => {
       const clip = makeClip({
         fadeRegions: [

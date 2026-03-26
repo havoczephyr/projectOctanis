@@ -22,7 +22,8 @@ describe('broadcasterStore', () => {
       currentFilePath: null,
       transportState: 'stopped',
       playheadSec: 0,
-      streamStatus: { running: false, port: 8080, format: 'mp3', listenerCount: 0, uptimeSec: 0 },
+      sfuConfig: null,
+      streamStatus: { connectionState: 'disconnected', serverUrl: null, roomName: null, participantCount: 0, uptimeSec: 0 },
       masterVolume: 1.0,
       micActive: false,
       micDuckAmount: 0.7,
@@ -90,29 +91,50 @@ describe('broadcasterStore', () => {
   })
 
   describe('stream status', () => {
-    it('starts with default offline status', () => {
+    it('starts with default disconnected status', () => {
       const status = useBroadcasterStore.getState().streamStatus
-      expect(status.running).toBe(false)
-      expect(status.port).toBe(8080)
-      expect(status.format).toBe('mp3')
-      expect(status.listenerCount).toBe(0)
+      expect(status.connectionState).toBe('disconnected')
+      expect(status.serverUrl).toBeNull()
+      expect(status.roomName).toBeNull()
+      expect(status.participantCount).toBe(0)
     })
 
     it('updates stream status', () => {
       useBroadcasterStore.getState().setStreamStatus({
-        running: true,
-        port: 9090,
-        format: 'opus',
-        listenerCount: 5,
+        connectionState: 'connected',
+        serverUrl: 'wss://test.server/janus',
+        roomName: 'Room 1234',
+        participantCount: 5,
         uptimeSec: 120,
       })
 
       const status = useBroadcasterStore.getState().streamStatus
-      expect(status.running).toBe(true)
-      expect(status.port).toBe(9090)
-      expect(status.format).toBe('opus')
-      expect(status.listenerCount).toBe(5)
+      expect(status.connectionState).toBe('connected')
+      expect(status.serverUrl).toBe('wss://test.server/janus')
+      expect(status.roomName).toBe('Room 1234')
+      expect(status.participantCount).toBe(5)
       expect(status.uptimeSec).toBe(120)
+    })
+  })
+
+  describe('sfu config', () => {
+    it('starts with null config', () => {
+      expect(useBroadcasterStore.getState().sfuConfig).toBeNull()
+    })
+
+    it('sets sfu config', () => {
+      useBroadcasterStore.getState().setSfuConfig({
+        provider: 'janus',
+        serverUrl: 'wss://test.server/janus',
+        roomId: 1234,
+        secret: 'mysecret',
+      })
+
+      const config = useBroadcasterStore.getState().sfuConfig
+      expect(config?.provider).toBe('janus')
+      expect(config?.serverUrl).toBe('wss://test.server/janus')
+      expect(config?.roomId).toBe(1234)
+      expect(config?.secret).toBe('mysecret')
     })
   })
 

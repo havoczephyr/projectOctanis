@@ -2,6 +2,7 @@ import { useEffect, useCallback } from 'react'
 import { useUiStore } from './store/uiStore'
 import { useBroadcasterStore } from './store/broadcasterStore'
 import { useAudioEngine } from './hooks/useAudioEngine'
+import { useWebRTCPublisher } from './hooks/useWebRTCPublisher'
 import { Spectrograph } from './components/Spectrograph'
 import { ControlPanel } from './components/ControlPanel'
 import { WaveformPanel } from './components/WaveformPanel'
@@ -19,7 +20,6 @@ export default function App(): JSX.Element {
   const projectFile = useBroadcasterStore((s) => s.projectFile)
   const setProject = useBroadcasterStore((s) => s.setProject)
   const streamStatus = useBroadcasterStore((s) => s.streamStatus)
-  const setStreamStatus = useBroadcasterStore((s) => s.setStreamStatus)
   const playheadSec = useBroadcasterStore((s) => s.playheadSec)
   const play = useBroadcasterStore((s) => s.play)
   const pause = useBroadcasterStore((s) => s.pause)
@@ -27,6 +27,7 @@ export default function App(): JSX.Element {
 
   const { analyser, musicGainNode, masterGainNode } = useAudioEngine()
   useMicrophone(musicGainNode, masterGainNode)
+  const { connect: sfuConnect, disconnect: sfuDisconnect } = useWebRTCPublisher(masterGainNode)
 
   // Sync theme + intensity to <html>
   useEffect(() => {
@@ -47,10 +48,9 @@ export default function App(): JSX.Element {
       window.octanis.menu.onFileOpen(handleFileOpen),
       window.octanis.menu.onToggleLeftCabinet(toggleLeft),
       window.octanis.menu.onToggleRightCabinet(toggleRight),
-      window.octanis.onStreamStatus(setStreamStatus),
     ]
     return () => unsubs.forEach((fn) => fn())
-  }, [handleFileOpen, toggleLeft, toggleRight, setStreamStatus])
+  }, [handleFileOpen, toggleLeft, toggleRight])
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -125,7 +125,7 @@ export default function App(): JSX.Element {
             <div className="glow-text" style={{ fontSize: 10, marginBottom: 8, letterSpacing: '0.1em' }}>
               CONTROLS
             </div>
-            <ControlPanel />
+            <ControlPanel onConnect={sfuConnect} onDisconnect={sfuDisconnect} />
           </div>
         </div>
 
@@ -260,10 +260,18 @@ export default function App(): JSX.Element {
 
         <div style={{ flex: 1 }} />
 
-        {/* Stream status */}
-        {streamStatus.running ? (
+        {/* SFU status */}
+        {streamStatus.connectionState === 'connected' ? (
           <span className="glow-text--green" style={{ fontSize: 10 }}>
-            ● LIVE &nbsp; {streamStatus.listenerCount} listener{streamStatus.listenerCount !== 1 ? 's' : ''} &nbsp; :{streamStatus.port}
+            ● CONNECTED &nbsp; {streamStatus.roomName} &nbsp; {streamStatus.participantCount} participant{streamStatus.participantCount !== 1 ? 's' : ''}
+          </span>
+        ) : streamStatus.connectionState === 'connecting' || streamStatus.connectionState === 'reconnecting' ? (
+          <span style={{ color: 'var(--accent-cyan)', fontSize: 10 }}>
+            ◌ {streamStatus.connectionState === 'connecting' ? 'CONNECTING...' : 'RECONNECTING...'}
+          </span>
+        ) : streamStatus.connectionState === 'failed' ? (
+          <span style={{ color: 'var(--accent-pink)', fontSize: 10 }}>
+            ✕ FAILED
           </span>
         ) : (
           <span style={{ color: 'var(--text-dim)', fontSize: 10 }}>

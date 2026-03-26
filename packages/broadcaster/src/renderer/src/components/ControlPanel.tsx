@@ -1,22 +1,84 @@
+import { useState } from 'react'
 import { useBroadcasterStore } from '../store/broadcasterStore'
+import { VolumeKnob } from './VolumeKnob'
+import type { SfuConfig, SfuConnectionState } from '../../../ipcTypes'
 
-export function ControlPanel(): JSX.Element {
+const STATE_COLORS: Record<SfuConnectionState, string> = {
+  disconnected: 'var(--text-dim)',
+  connecting: 'var(--accent-cyan)',
+  connected: 'var(--accent-green)',
+  reconnecting: 'var(--accent-cyan)',
+  failed: 'var(--accent-pink)',
+}
+
+const STATE_LABELS: Record<SfuConnectionState, string> = {
+  disconnected: 'DISCONNECTED',
+  connecting: 'CONNECTING...',
+  connected: 'CONNECTED',
+  reconnecting: 'RECONNECTING...',
+  failed: 'FAILED',
+}
+
+interface ControlPanelProps {
+  onConnect: (config: SfuConfig) => Promise<void>
+  onDisconnect: () => Promise<void>
+}
+
+export function ControlPanel({ onConnect, onDisconnect }: ControlPanelProps): JSX.Element {
   const micActive = useBroadcasterStore((s) => s.micActive)
   const setMicActive = useBroadcasterStore((s) => s.setMicActive)
   const micDuckAmount = useBroadcasterStore((s) => s.micDuckAmount)
   const setMicDuckAmount = useBroadcasterStore((s) => s.setMicDuckAmount)
   const streamStatus = useBroadcasterStore((s) => s.streamStatus)
 
-  const handleStreamToggle = async (): Promise<void> => {
-    if (streamStatus.running) {
-      await window.octanis.stream.stop()
-    } else {
-      await window.octanis.stream.start(8080, 'mp3')
+  const [serverUrl, setServerUrl] = useState('')
+  const [roomId, setRoomId] = useState('')
+  const [secret, setSecret] = useState('')
+  const [displayName, setDisplayName] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  const isConnected = streamStatus.connectionState === 'connected'
+  const isActive = streamStatus.connectionState !== 'disconnected' && streamStatus.connectionState !== 'failed'
+
+  const handleToggle = async (): Promise<void> => {
+    if (busy) return
+    setBusy(true)
+    try {
+      if (isActive) {
+        await onDisconnect()
+      } else {
+        const parsed = Number(roomId)
+        if (!serverUrl || !roomId || isNaN(parsed)) return
+        await onConnect({
+          provider: 'janus',
+          serverUrl,
+          roomId: parsed,
+          secret: secret || undefined,
+          displayName: displayName || undefined,
+        })
+      }
+    } catch (err) {
+      console.error('[SFU]', err)
+    } finally {
+      setBusy(false)
     }
   }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      {/* Section: Master Volume */}
+      <div>
+        <div className="glow-text" style={{ fontSize: 9, marginBottom: 6, letterSpacing: '0.12em' }}>
+          MASTER VOLUME
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'center' }}>
+          <VolumeKnob />
+        </div>
+      </div>
+
+      {/* Separator */}
+      <div style={{ borderTop: '1px solid var(--border-subtle)', margin: '4px 0' }} />
+
       {/* Section: Microphone */}
       <div>
         <div className="glow-text" style={{ fontSize: 9, marginBottom: 6, letterSpacing: '0.12em' }}>
@@ -71,24 +133,68 @@ export function ControlPanel(): JSX.Element {
       {/* Separator */}
       <div style={{ borderTop: '1px solid var(--border-subtle)', margin: '4px 0' }} />
 
-      {/* Section: Stream */}
+      {/* Section: SFU Broadcast */}
       <div>
         <div className="glow-text" style={{ fontSize: 9, marginBottom: 6, letterSpacing: '0.12em' }}>
-          HTTP STREAM
+          SFU BROADCAST
         </div>
+
+        {/* Connection form */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 6 }}>
+          <input
+            type="text"
+            placeholder="wss://server/janus"
+            value={serverUrl}
+            onChange={(e) => setServerUrl(e.target.value)}
+            disabled={isActive}
+            style={{ fontSize: 10, padding: '4px 6px' }}
+          />
+          <input
+            type="number"
+            placeholder="Room ID"
+            value={roomId}
+            onChange={(e) => setRoomId(e.target.value)}
+            disabled={isActive}
+            style={{ fontSize: 10, padding: '4px 6px' }}
+          />
+          <input
+            type="password"
+            placeholder="Secret (optional)"
+            value={secret}
+            onChange={(e) => setSecret(e.target.value)}
+            disabled={isActive}
+            style={{ fontSize: 10, padding: '4px 6px' }}
+          />
+          <input
+            type="text"
+            placeholder="Display name (optional)"
+            value={displayName}
+            onChange={(e) => setDisplayName(e.target.value)}
+            disabled={isActive}
+            style={{ fontSize: 10, padding: '4px 6px' }}
+          />
+        </div>
+
         <button
-          className={`btn${streamStatus.running ? '' : ' btn--primary'}`}
-          onClick={handleStreamToggle}
+          className={`btn${isActive ? '' : ' btn--primary'}`}
+          onClick={handleToggle}
+          disabled={busy || (!isActive && (!serverUrl || !roomId))}
           style={{ width: '100%', height: 32, fontSize: 11 }}
         >
-          {streamStatus.running ? '⏹ STOP STREAM' : '▶ START STREAM'}
+          {busy ? '...' : isActive ? '⏹ DISCONNECT' : '▶ CONNECT'}
         </button>
-        <div style={{ marginTop: 6, fontSize: 9, color: 'var(--text-dim)' }}>
-          <div>Port: {streamStatus.port}</div>
-          <div>Format: {streamStatus.format.toUpperCase()}</div>
-          {streamStatus.running && (
+
+        {/* Status */}
+        <div style={{ marginTop: 6, fontSize: 9 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            <span style={{ color: STATE_COLORS[streamStatus.connectionState] }}>●</span>
+            <span style={{ color: STATE_COLORS[streamStatus.connectionState] }}>
+              {STATE_LABELS[streamStatus.connectionState]}
+            </span>
+          </div>
+          {isConnected && (
             <div style={{ color: 'var(--accent-green)', marginTop: 2 }}>
-              {streamStatus.listenerCount} listener{streamStatus.listenerCount !== 1 ? 's' : ''}
+              {streamStatus.participantCount} participant{streamStatus.participantCount !== 1 ? 's' : ''}
             </div>
           )}
         </div>

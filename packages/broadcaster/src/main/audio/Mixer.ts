@@ -1,6 +1,9 @@
 import ffmpeg from 'fluent-ffmpeg'
 import ffmpegStatic from 'ffmpeg-static'
 import { type Readable } from 'stream'
+import { writeFileSync } from 'fs'
+import { join } from 'path'
+import { tmpdir } from 'os'
 import type { OctanisProjectFile, Clip } from '@octanis/shared'
 import { EnvelopeMapper } from './EnvelopeMapper.js'
 
@@ -80,8 +83,7 @@ export const Mixer = {
       const delayStr = `${delayMs}|${delayMs}`
 
       const chainParts: string[] = [
-        `[${i}:a]`,
-        `aformat=channel_layouts=stereo`,
+        `[${i}:a]aformat=channel_layouts=stereo`,
         `adelay=${delayStr}`,
       ]
 
@@ -107,7 +109,12 @@ export const Mixer = {
         `[master]`
     )
 
-    cmd.complexFilter(filterParts)
+    // Write filter graph to temp file to avoid command-line escaping issues
+    // with fluent-ffmpeg's complexFilter() and ffmpeg's argument parser
+    const filterGraph = filterParts.join(';\n')
+    const filterFile = join(tmpdir(), `octanis-filter-${Date.now()}.txt`)
+    writeFileSync(filterFile, filterGraph)
+    cmd.outputOptions(['-filter_complex_script', filterFile])
     cmd.map('[master]')
 
     cmd.outputOptions([
