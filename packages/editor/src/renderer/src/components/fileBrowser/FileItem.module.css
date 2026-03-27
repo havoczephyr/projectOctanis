@@ -16,6 +16,16 @@
   color: var(--text-primary);
 }
 
+.selected {
+  background: var(--bg-panel-hover);
+  color: var(--accent-cyan);
+}
+
+.selected .icon {
+  opacity: 1;
+  text-shadow: 0 0 6px var(--accent-cyan);
+}
+
 .audioFile {
   cursor: grab;
 }

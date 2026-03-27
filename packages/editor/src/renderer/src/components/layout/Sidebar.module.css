@@ -37,6 +37,17 @@
   flex-shrink: 0;
 }
 
+.importedConstrained {
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+.importedExpanded {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+}
+
 .empty {
   flex: 1;
   display: flex;

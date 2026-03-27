@@ -17,7 +17,12 @@ function getIcon(name: string): string {
   return AUDIO_ICONS[ext] ?? '·'
 }
 
-export function ImportedFilesList(): React.ReactElement {
+interface Props {
+  selectedPath: string | null
+  onSelect: (path: string) => void
+}
+
+export function ImportedFilesList({ selectedPath, onSelect }: Props): React.ReactElement {
   const audioFiles = useProjectStore((s) => s.projectFile.audioFiles)
   const removeAudioFile = useProjectStore((s) => s.removeAudioFile)
   const entries = Object.values(audioFiles)
@@ -26,11 +31,13 @@ export function ImportedFilesList(): React.ReactElement {
     <div className={styles.list}>
       {entries.map((af) => {
         const fileName = af.absolutePath.split('/').pop() ?? af.id
+        const isSelected = selectedPath === af.absolutePath
         return (
           <div
             key={af.id}
-            className={styles.item}
+            className={`${styles.item} ${isSelected ? styles.selected : ''}`}
             draggable
+            onClick={() => onSelect(af.absolutePath)}
             onDragStart={(e) => {
               e.dataTransfer.setData('application/octanis-audio-path', af.absolutePath)
               e.dataTransfer.effectAllowed = 'copy'

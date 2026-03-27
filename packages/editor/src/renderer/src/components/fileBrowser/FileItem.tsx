@@ -7,6 +7,7 @@ interface Props {
   depth: number
   expanded?: boolean
   previewing?: boolean
+  selected?: boolean
   onToggleDir: (path: string) => void
   onContextMenu?: (e: React.MouseEvent, entry: FileEntry) => void
   onClickFile?: (entry: FileEntry) => void
@@ -29,7 +30,7 @@ function getIcon(entry: FileEntry, previewing?: boolean): string {
   return AUDIO_ICONS[ext] ?? '·'
 }
 
-export function FileItem({ entry, depth, expanded, previewing, onToggleDir, onContextMenu, onClickFile }: Props): React.ReactElement {
+export function FileItem({ entry, depth, expanded, previewing, selected, onToggleDir, onContextMenu, onClickFile }: Props): React.ReactElement {
   function handleClick(): void {
     if (entry.isDirectory) {
       onToggleDir(entry.path)
@@ -47,7 +48,7 @@ export function FileItem({ entry, depth, expanded, previewing, onToggleDir, onCo
 
   return (
     <div
-      className={`${styles.item} ${entry.isAudioFile ? styles.audioFile : ''} ${entry.isDirectory ? styles.directory : ''} ${previewing ? styles.previewing : ''}`}
+      className={`${styles.item} ${entry.isAudioFile ? styles.audioFile : ''} ${entry.isDirectory ? styles.directory : ''} ${previewing ? styles.previewing : ''} ${selected ? styles.selected : ''}`}
       style={{ paddingLeft: `${10 + depth * 14}px` }}
       onClick={handleClick}
       onContextMenu={(e) => onContextMenu?.(e, entry)}

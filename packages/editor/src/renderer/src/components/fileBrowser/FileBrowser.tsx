@@ -7,6 +7,8 @@ import styles from './FileBrowser.module.css'
 
 interface Props {
   rootPath: string
+  selectedPath: string | null
+  onSelect: (path: string) => void
 }
 
 interface ContextMenuState {
@@ -18,7 +20,7 @@ interface ContextMenuState {
 
 const MENU_HIDDEN: ContextMenuState = { visible: false, x: 0, y: 0, audioPath: '' }
 
-export function FileBrowser({ rootPath }: Props): React.ReactElement {
+export function FileBrowser({ rootPath, selectedPath, onSelect }: Props): React.ReactElement {
   const [entries, setEntries] = useState<FileEntry[]>([])
   const [loading, setLoading] = useState(false)
   const [expandedDirs, setExpandedDirs] = useState<Set<string>>(new Set())
@@ -56,10 +58,13 @@ export function FileBrowser({ rootPath }: Props): React.ReactElement {
   }, [ctxMenu.audioPath, preview])
 
   const handleClickFile = useCallback((entry: FileEntry) => {
-    if (entry.isAudioFile && isPlaying && currentPath === entry.path) {
-      stopPreview()
+    if (entry.isAudioFile) {
+      onSelect(entry.path)
+      if (isPlaying && currentPath === entry.path) {
+        stopPreview()
+      }
     }
-  }, [isPlaying, currentPath, stopPreview])
+  }, [isPlaying, currentPath, stopPreview, onSelect])
 
   if (loading) {
     return <div className={styles.loading}>Loading...</div>
@@ -78,6 +83,7 @@ export function FileBrowser({ rootPath }: Props): React.ReactElement {
             depth={0}
             expanded={expandedDirs.has(entry.path)}
             previewing={isPlaying && currentPath === entry.path}
+            selected={selectedPath === entry.path}
             onToggleDir={toggleDir}
             onContextMenu={handleContextMenu}
             onClickFile={handleClickFile}

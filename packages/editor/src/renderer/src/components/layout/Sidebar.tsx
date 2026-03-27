@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useState } from 'react'
 import { FileBrowser } from '../fileBrowser/FileBrowser'
 import { ImportedFilesList } from '../fileBrowser/ImportedFilesList'
 import { useUiStore } from '../../store/uiStore'
@@ -10,6 +10,8 @@ export function Sidebar(): React.ReactElement {
   const setSidebarFolder = useUiStore((s) => s.setSidebarFolder)
   const audioFiles = useProjectStore((s) => s.projectFile.audioFiles)
   const hasImportedFiles = Object.keys(audioFiles).length > 0
+
+  const [selectedPath, setSelectedPath] = useState<string | null>(null)
 
   async function handleOpenFolder(): Promise<void> {
     const path = await window.octanis.file.openFolder()
@@ -27,6 +29,10 @@ export function Sidebar(): React.ReactElement {
         console.error('[Octanis] Failed to import audio file', sourcePath, err)
       }
     }
+  }
+
+  function handleSelect(path: string): void {
+    setSelectedPath((prev) => (prev === path ? null : path))
   }
 
   return (
@@ -47,7 +53,9 @@ export function Sidebar(): React.ReactElement {
       {hasImportedFiles && (
         <>
           <div className={styles.sectionHeader}>IMPORTED</div>
-          <ImportedFilesList />
+          <div className={folder ? styles.importedConstrained : styles.importedExpanded}>
+            <ImportedFilesList selectedPath={selectedPath} onSelect={handleSelect} />
+          </div>
         </>
       )}
 
@@ -55,16 +63,14 @@ export function Sidebar(): React.ReactElement {
       {folder ? (
         <>
           {hasImportedFiles && <div className={styles.sectionHeader}>BROWSE</div>}
-          <FileBrowser rootPath={folder} />
+          <FileBrowser rootPath={folder} selectedPath={selectedPath} onSelect={handleSelect} />
         </>
       ) : !hasImportedFiles ? (
         <div className={styles.empty}>
           <div className={styles.emptyIcon}>♪</div>
           <div className={styles.emptyText}>Open a folder to browse audio files</div>
         </div>
-      ) : (
-        <div style={{ flex: 1 }} />
-      )}
+      ) : null}
     </div>
   )
 }
