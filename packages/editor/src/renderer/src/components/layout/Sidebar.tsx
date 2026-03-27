@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React from 'react'
 import { FileBrowser } from '../fileBrowser/FileBrowser'
 import { ImportedFilesList } from '../fileBrowser/ImportedFilesList'
 import { useUiStore } from '../../store/uiStore'
@@ -11,7 +11,8 @@ export function Sidebar(): React.ReactElement {
   const audioFiles = useProjectStore((s) => s.projectFile.audioFiles)
   const hasImportedFiles = Object.keys(audioFiles).length > 0
 
-  const [selectedPath, setSelectedPath] = useState<string | null>(null)
+  const selectedPath = useUiStore((s) => s.selectedSidebarPath)
+  const setSelectedSidebarPath = useUiStore((s) => s.setSelectedSidebarPath)
 
   async function handleOpenFolder(): Promise<void> {
     const path = await window.octanis.file.openFolder()
@@ -32,7 +33,7 @@ export function Sidebar(): React.ReactElement {
   }
 
   function handleSelect(path: string): void {
-    setSelectedPath((prev) => (prev === path ? null : path))
+    setSelectedSidebarPath(selectedPath === path ? null : path)
   }
 
   return (

@@ -1,14 +1,13 @@
 import type { Clip } from '@octanis/shared'
 
-interface ClipboardEntry {
-  clip: Clip
-  audioFileId: string
-}
+export type ClipboardEntry =
+  | { type: 'clip'; clip: Clip; audioFileId: string }
+  | { type: 'file'; audioPath: string }
 
 let clipboard: ClipboardEntry | null = null
 
 export function copyToClipboard(entry: ClipboardEntry): void {
-  clipboard = structuredClone(entry)
+  clipboard = entry.type === 'clip' ? { ...entry, clip: structuredClone(entry.clip) } : { ...entry }
 }
 
 export function getClipboard(): ClipboardEntry | null {

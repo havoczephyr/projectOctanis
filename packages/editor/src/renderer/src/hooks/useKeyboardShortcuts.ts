@@ -44,24 +44,29 @@ export function useKeyboardShortcuts(): void {
         useUiStore.getState().zoomToFit(timelineViewportWidth, durationSec)
       }
 
-      // ── Copy clip (Ctrl+C) ───────────────────────────────────────
+      // ── Copy clip or sidebar file (Ctrl+C) ────────────────────────
 
       if (mod && !e.shiftKey && e.key === 'c' && !isTextInput) {
         e.preventDefault()
         const clipId = useUiStore.getState().selectedClipIds[0]
-        if (!clipId) {
-          useUiStore.getState().showToast('No clip selected', 'info')
-          return
-        }
-        const { tracks } = useProjectStore.getState().projectFile.project
-        for (const track of tracks) {
-          const clip = track.clips.find((c) => c.id === clipId)
-          if (clip) {
-            copyToClipboard({ clip, audioFileId: clip.audioFileId })
-            useUiStore.getState().showToast('Clip copied', 'info')
-            return
+        if (clipId) {
+          const { tracks } = useProjectStore.getState().projectFile.project
+          for (const track of tracks) {
+            const clip = track.clips.find((c) => c.id === clipId)
+            if (clip) {
+              copyToClipboard({ type: 'clip', clip, audioFileId: clip.audioFileId })
+              useUiStore.getState().showToast('Clip copied', 'info')
+              return
+            }
           }
         }
+        const sidebarPath = useUiStore.getState().selectedSidebarPath
+        if (sidebarPath) {
+          copyToClipboard({ type: 'file', audioPath: sidebarPath })
+          useUiStore.getState().showToast('File copied', 'info')
+          return
+        }
+        useUiStore.getState().showToast('No clip or file selected', 'info')
       }
 
       // ── Cut clip (Ctrl+X) ────────────────────────────────────────
@@ -77,7 +82,7 @@ export function useKeyboardShortcuts(): void {
         for (const track of tracks) {
           const clip = track.clips.find((c) => c.id === clipId)
           if (clip) {
-            copyToClipboard({ clip, audioFileId: clip.audioFileId })
+            copyToClipboard({ type: 'clip', clip, audioFileId: clip.audioFileId })
             useProjectStore.getState().removeClip(track.id, clip.id)
             useUiStore.getState().deselectAll()
             useUiStore.getState().showToast('Clip cut', 'info')
@@ -86,7 +91,7 @@ export function useKeyboardShortcuts(): void {
         }
       }
 
-      // ── Paste clip (Ctrl+Shift+V) ────────────────────────────────
+      // ── Paste clip or file (Ctrl+Shift+V) ─────────────────────────
 
       if (mod && e.shiftKey && (e.key === 'v' || e.key === 'V') && !isTextInput) {
         e.preventDefault()
@@ -107,6 +112,31 @@ export function useKeyboardShortcuts(): void {
         const track = tracks.find((t) => t.id === hoveredTrackId)
         if (!track) return
 
+        if (entry.type === 'file') {
+          // Paste from sidebar file — inspect, register, and add clip
+          window.octanis.ffmpeg.inspectAudio(entry.audioPath).then((af) => {
+            const freshStore = useProjectStore.getState()
+            if (!freshStore.projectFile.audioFiles[af.id]) {
+              freshStore.addAudioFile(af)
+            }
+            const freshTrack = freshStore.projectFile.project.tracks.find((t) => t.id === hoveredTrackId)
+            if (!freshTrack) return
+            const dur = af.durationSec
+            const col = findClipCollision(freshTrack, dur, playheadSec, null, freshStore.projectFile.audioFiles)
+            if (col) {
+              useUiStore.getState().showToast('Cannot paste — clips would overlap', 'error')
+              useUiStore.getState().setClipCollisionFlash({ trackId: hoveredTrackId })
+              return
+            }
+            freshStore.addClip(hoveredTrackId, af.id, playheadSec)
+            useUiStore.getState().showToast('File pasted as clip', 'info')
+          }).catch(() => {
+            useUiStore.getState().showToast('Failed to read audio file', 'error')
+          })
+          return
+        }
+
+        // Paste from copied/cut clip
         const clipDuration = getClipDurationSec(entry.clip, audioFiles)
         const collision = findClipCollision(track, clipDuration, playheadSec, null, audioFiles)
         if (collision) {
@@ -115,7 +145,6 @@ export function useKeyboardShortcuts(): void {
           return
         }
 
-        // Create new clip with regenerated IDs
         const newClipId = store.addClip(hoveredTrackId, entry.audioFileId, playheadSec)
         store.updateClip(hoveredTrackId, newClipId, {
           trimStartSec: entry.clip.trimStartSec,

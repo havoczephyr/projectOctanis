@@ -107,6 +107,10 @@ interface UiStore {
   clipCollisionFlash: { trackId: string } | null
   setClipCollisionFlash: (flash: { trackId: string } | null) => void
 
+  /** Currently selected file path in the sidebar */
+  selectedSidebarPath: string | null
+  setSelectedSidebarPath: (path: string | null) => void
+
   /** Pending new project flag — tells SplashScreen to auto-show new project form */
   pendingNewProject: boolean
   setPendingNewProject: (v: boolean) => void
@@ -209,6 +213,9 @@ export const useUiStore = create<UiStore>((set) => ({
 
   clipCollisionFlash: null,
   setClipCollisionFlash: (flash) => set({ clipCollisionFlash: flash }),
+
+  selectedSidebarPath: null,
+  setSelectedSidebarPath: (path) => set({ selectedSidebarPath: path }),
 
   pendingNewProject: false,
   setPendingNewProject: (v) => set({ pendingNewProject: v }),
