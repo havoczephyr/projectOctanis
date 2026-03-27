@@ -3,6 +3,7 @@ import { AppShell } from './components/layout/AppShell'
 import { UndoHistoryPanel } from './components/UndoHistoryPanel'
 import { ClipContextMenu } from './components/timeline/ClipContextMenu'
 import { FadeGainEditor } from './components/FadeGainEditor'
+import { ShortcutPrompt } from './components/ShortcutPrompt'
 import { SplashScreen } from './components/splash/SplashScreen'
 import { useUiStore } from './store/uiStore'
 import { useProjectStore } from './store/projectStore'
@@ -35,6 +36,7 @@ export default function App(): React.ReactElement {
       <UndoHistoryPanel />
       <ClipContextMenu />
       <FadeGainEditor />
+      <ShortcutPrompt />
     </>
   )
 }

@@ -74,6 +74,11 @@ export const octanisApi = {
       ipcRenderer.on('menu:undo-history', handler)
       return () => { ipcRenderer.removeListener('menu:undo-history', handler) }
     },
+    onFileNew: (cb: () => void): (() => void) => {
+      const handler = (): void => cb()
+      ipcRenderer.on('menu:file-new', handler)
+      return () => { ipcRenderer.removeListener('menu:file-new', handler) }
+    },
     onFileOpen: (cb: () => void): (() => void) => {
       const handler = (): void => cb()
       ipcRenderer.on('menu:file-open', handler)

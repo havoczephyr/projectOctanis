@@ -53,6 +53,11 @@ function createWindow(): void {
       label: 'File',
       submenu: [
         {
+          label: 'New Project...',
+          accelerator: 'CmdOrCtrl+N',
+          click: () => mainWindow?.webContents.send('menu:file-new'),
+        },
+        {
           label: 'Open...',
           accelerator: 'CmdOrCtrl+O',
           click: () => mainWindow?.webContents.send('menu:file-open'),

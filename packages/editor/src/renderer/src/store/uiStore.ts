@@ -23,6 +23,12 @@ interface FadeGainEditorContext {
   regionId: string
 }
 
+interface ShortcutPrompt {
+  type: 'loop' | 'duck'
+  clipId: string
+  trackId: string
+}
+
 interface UiStore {
   theme: Theme
   toggleTheme: () => void
@@ -100,6 +106,15 @@ interface UiStore {
   /** Collision flash on track */
   clipCollisionFlash: { trackId: string } | null
   setClipCollisionFlash: (flash: { trackId: string } | null) => void
+
+  /** Pending new project flag — tells SplashScreen to auto-show new project form */
+  pendingNewProject: boolean
+  setPendingNewProject: (v: boolean) => void
+
+  /** Shortcut prompt for loop/duck input */
+  shortcutPrompt: ShortcutPrompt | null
+  openShortcutPrompt: (prompt: ShortcutPrompt) => void
+  closeShortcutPrompt: () => void
 }
 
 export const MIN_ZOOM = 20   // px per second
@@ -194,4 +209,11 @@ export const useUiStore = create<UiStore>((set) => ({
 
   clipCollisionFlash: null,
   setClipCollisionFlash: (flash) => set({ clipCollisionFlash: flash }),
+
+  pendingNewProject: false,
+  setPendingNewProject: (v) => set({ pendingNewProject: v }),
+
+  shortcutPrompt: null,
+  openShortcutPrompt: (prompt) => set({ shortcutPrompt: prompt }),
+  closeShortcutPrompt: () => set({ shortcutPrompt: null }),
 }))

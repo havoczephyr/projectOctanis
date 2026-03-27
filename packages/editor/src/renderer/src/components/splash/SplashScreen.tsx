@@ -1,6 +1,7 @@
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { useProjectStore } from '../../store/projectStore'
 import { useRecentProjectsStore, type RecentProject } from '../../store/recentProjectsStore'
+import { useUiStore } from '../../store/uiStore'
 import { discoverAudioFiles } from '../../utils/discoverAudioFiles'
 import styles from './SplashScreen.module.css'
 
@@ -13,6 +14,14 @@ export function SplashScreen(): React.ReactElement {
   const [showNewForm, setShowNewForm] = useState(false)
   const [projectTitle, setProjectTitle] = useState('Untitled Project')
   const [error, setError] = useState<string | null>(null)
+
+  // Auto-show new project form when arriving via Ctrl+N
+  useEffect(() => {
+    if (useUiStore.getState().pendingNewProject) {
+      setShowNewForm(true)
+      useUiStore.getState().setPendingNewProject(false)
+    }
+  }, [])
 
   async function handleNewProject(): Promise<void> {
     setError(null)

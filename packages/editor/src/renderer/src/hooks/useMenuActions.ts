@@ -17,6 +17,11 @@ export function useMenuActions(): void {
     const cleanupHistory = window.octanis.menu.onUndoHistory(() => {
       useUiStore.getState().setShowUndoHistoryPanel(true)
     })
+    const cleanupFileNew = window.octanis.menu.onFileNew(async () => {
+      if (!(await confirmUnsavedChanges())) return
+      useProjectStore.getState().closeProject()
+      useUiStore.getState().setPendingNewProject(true)
+    })
     const cleanupFileOpen = window.octanis.menu.onFileOpen(async () => {
       if (!(await confirmUnsavedChanges())) return
       const result = await window.octanis.file.open()
@@ -48,6 +53,7 @@ export function useMenuActions(): void {
       cleanupUndo()
       cleanupRedo()
       cleanupHistory()
+      cleanupFileNew()
       cleanupFileOpen()
       cleanupFileSave()
       cleanupFileSaveAs()
