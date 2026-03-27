@@ -29,13 +29,20 @@ export type SfuConnectionState =
   | 'reconnecting'
   | 'failed'
 
-export type SfuConfig = {
-  provider: 'janus'
-  serverUrl: string
-  roomId: number
-  secret?: string
-  displayName?: string
-}
+export type SfuConfig =
+  | {
+      provider: 'janus'
+      serverUrl: string
+      roomId: number
+      secret?: string
+      displayName?: string
+    }
+  | {
+      provider: 'cosmic'
+      serverUrl: string
+      accessKey: string
+      displayName?: string
+    }
 
 export interface StreamStatus {
   connectionState: SfuConnectionState

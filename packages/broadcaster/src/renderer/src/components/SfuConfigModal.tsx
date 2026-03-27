@@ -1,28 +1,42 @@
 import { useState, useEffect, useRef } from 'react'
 import { useBroadcasterStore } from '../store/broadcasterStore'
+import type { SfuConfig } from '../../../ipcTypes'
 
 interface SfuConfigModalProps {
   open: boolean
   onClose: () => void
 }
 
+type Provider = 'cosmic' | 'janus'
+
 export function SfuConfigModal({ open, onClose }: SfuConfigModalProps): JSX.Element | null {
   const sfuConfig = useBroadcasterStore((s) => s.sfuConfig)
   const setSfuConfig = useBroadcasterStore((s) => s.setSfuConfig)
   const backdropRef = useRef<HTMLDivElement>(null)
 
+  const [provider, setProvider] = useState<Provider>('cosmic')
   const [serverUrl, setServerUrl] = useState('')
+  const [displayName, setDisplayName] = useState('')
+
+  // Cosmic fields
+  const [accessKey, setAccessKey] = useState('')
+
+  // Janus fields
   const [roomId, setRoomId] = useState('')
   const [secret, setSecret] = useState('')
-  const [displayName, setDisplayName] = useState('')
 
   // Sync form with store when modal opens
   useEffect(() => {
     if (open && sfuConfig) {
+      setProvider(sfuConfig.provider)
       setServerUrl(sfuConfig.serverUrl)
-      setRoomId(String(sfuConfig.roomId))
-      setSecret(sfuConfig.secret ?? '')
       setDisplayName(sfuConfig.displayName ?? '')
+      if (sfuConfig.provider === 'cosmic') {
+        setAccessKey(sfuConfig.accessKey)
+      } else {
+        setRoomId(String(sfuConfig.roomId))
+        setSecret(sfuConfig.secret ?? '')
+      }
     }
   }, [open, sfuConfig])
 
@@ -41,16 +55,31 @@ export function SfuConfigModal({ open, onClose }: SfuConfigModalProps): JSX.Elem
 
   if (!open) return null
 
+  const isCosmicValid = serverUrl && /^[0-9a-fA-F]{32}$/.test(accessKey)
+  const isJanusValid = serverUrl && roomId && !isNaN(Number(roomId))
+  const canSave = provider === 'cosmic' ? isCosmicValid : isJanusValid
+
   const handleSave = (): void => {
-    const parsed = Number(roomId)
-    if (!serverUrl || !roomId || isNaN(parsed)) return
-    setSfuConfig({
-      provider: 'janus',
-      serverUrl,
-      roomId: parsed,
-      secret: secret || undefined,
-      displayName: displayName || undefined,
-    })
+    let config: SfuConfig
+    if (provider === 'cosmic') {
+      if (!isCosmicValid) return
+      config = {
+        provider: 'cosmic',
+        serverUrl,
+        accessKey,
+        displayName: displayName || undefined,
+      }
+    } else {
+      if (!isJanusValid) return
+      config = {
+        provider: 'janus',
+        serverUrl,
+        roomId: Number(roomId),
+        secret: secret || undefined,
+        displayName: displayName || undefined,
+      }
+    }
+    setSfuConfig(config)
     onClose()
   }
 
@@ -75,6 +104,20 @@ export function SfuConfigModal({ open, onClose }: SfuConfigModalProps): JSX.Elem
     letterSpacing: '0.08em',
     marginBottom: 2,
   }
+
+  const toggleStyle = (active: boolean): React.CSSProperties => ({
+    flex: 1,
+    height: 26,
+    fontSize: 10,
+    letterSpacing: '0.08em',
+    border: 'none',
+    borderRadius: 'var(--radius-sm)',
+    cursor: 'pointer',
+    fontFamily: 'var(--font-mono)',
+    background: active ? 'var(--accent-cyan)' : 'var(--bg-input)',
+    color: active ? 'var(--bg-primary)' : 'var(--text-dim)',
+    transition: 'background 0.15s, color 0.15s',
+  })
 
   return (
     <div
@@ -101,14 +144,25 @@ export function SfuConfigModal({ open, onClose }: SfuConfigModalProps): JSX.Elem
         }}
       >
         <div className="glow-text" style={{ fontSize: 10, letterSpacing: '0.12em', marginBottom: 2 }}>
-          SFU CONNECTION
+          STREAM CONNECTION
         </div>
 
+        {/* Provider toggle */}
+        <div style={{ display: 'flex', gap: 4 }}>
+          <button style={toggleStyle(provider === 'cosmic')} onClick={() => setProvider('cosmic')}>
+            COSMIC
+          </button>
+          <button style={toggleStyle(provider === 'janus')} onClick={() => setProvider('janus')}>
+            JANUS
+          </button>
+        </div>
+
+        {/* Server URL — shared */}
         <div>
           <div style={labelStyle}>SERVER URL</div>
           <input
             type="text"
-            placeholder="wss://server/janus"
+            placeholder={provider === 'cosmic' ? 'wss://cosmic.example.com' : 'wss://server/janus'}
             value={serverUrl}
             onChange={(e) => setServerUrl(e.target.value)}
             style={inputStyle}
@@ -116,33 +170,50 @@ export function SfuConfigModal({ open, onClose }: SfuConfigModalProps): JSX.Elem
           />
         </div>
 
-        <div>
-          <div style={labelStyle}>ROOM ID</div>
-          <input
-            type="number"
-            placeholder="1234"
-            value={roomId}
-            onChange={(e) => setRoomId(e.target.value)}
-            style={inputStyle}
-          />
-        </div>
+        {/* Provider-specific fields */}
+        {provider === 'cosmic' ? (
+          <div>
+            <div style={labelStyle}>ACCESS KEY</div>
+            <input
+              type="text"
+              placeholder="32-character hex key"
+              value={accessKey}
+              onChange={(e) => setAccessKey(e.target.value)}
+              style={{ ...inputStyle, fontFamily: 'var(--font-mono)', letterSpacing: '0.05em' }}
+              maxLength={32}
+            />
+          </div>
+        ) : (
+          <>
+            <div>
+              <div style={labelStyle}>ROOM ID</div>
+              <input
+                type="number"
+                placeholder="1234"
+                value={roomId}
+                onChange={(e) => setRoomId(e.target.value)}
+                style={inputStyle}
+              />
+            </div>
+            <div>
+              <div style={labelStyle}>SECRET</div>
+              <input
+                type="password"
+                placeholder="Pre-shared secret (optional)"
+                value={secret}
+                onChange={(e) => setSecret(e.target.value)}
+                style={inputStyle}
+              />
+            </div>
+          </>
+        )}
 
-        <div>
-          <div style={labelStyle}>SECRET</div>
-          <input
-            type="password"
-            placeholder="Pre-shared secret (optional)"
-            value={secret}
-            onChange={(e) => setSecret(e.target.value)}
-            style={inputStyle}
-          />
-        </div>
-
+        {/* Display name — shared */}
         <div>
           <div style={labelStyle}>DISPLAY NAME</div>
           <input
             type="text"
-            placeholder="Broadcaster (optional)"
+            placeholder="DJ Name (optional)"
             value={displayName}
             onChange={(e) => setDisplayName(e.target.value)}
             style={inputStyle}
@@ -153,7 +224,7 @@ export function SfuConfigModal({ open, onClose }: SfuConfigModalProps): JSX.Elem
           <button
             className="btn btn--primary"
             onClick={handleSave}
-            disabled={!serverUrl || !roomId || isNaN(Number(roomId))}
+            disabled={!canSave}
             style={{ flex: 1, height: 30, fontSize: 11 }}
           >
             SAVE

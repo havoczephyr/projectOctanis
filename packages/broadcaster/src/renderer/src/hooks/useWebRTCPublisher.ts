@@ -3,6 +3,7 @@ import { useBroadcasterStore } from '../store/broadcasterStore'
 import type { SfuConfig, SfuConnectionState } from '../../../ipcTypes'
 import type { SfuProvider } from '../sfu/types'
 import { JanusProvider } from '../sfu/JanusProvider'
+import { CosmicProvider } from '../sfu/CosmicProvider'
 
 function createProvider(config: SfuConfig): SfuProvider {
   switch (config.provider) {
@@ -11,6 +12,12 @@ function createProvider(config: SfuConfig): SfuProvider {
         serverUrl: config.serverUrl,
         roomId: config.roomId,
         secret: config.secret,
+        displayName: config.displayName,
+      })
+    case 'cosmic':
+      return new CosmicProvider({
+        serverUrl: config.serverUrl,
+        accessKey: config.accessKey,
         displayName: config.displayName,
       })
     default:
