@@ -16,6 +16,7 @@ export function TrackLane({ track, height, totalWidth: parentTotalWidth }: Props
   const durationSec = useProjectStore((s) => s.projectFile.project.durationSec)
   const audioFiles = useProjectStore((s) => s.projectFile.audioFiles)
   const deselectAll = useUiStore((s) => s.deselectAll)
+  const setHoveredTrack = useUiStore((s) => s.setHoveredTrack)
   const collisionFlash = useUiStore((s) => s.clipCollisionFlash)
   const { timeToPixel } = useTimeToPixel()
 
@@ -52,6 +53,8 @@ export function TrackLane({ track, height, totalWidth: parentTotalWidth }: Props
         } as React.CSSProperties
       }
       onClick={handleClick}
+      onMouseEnter={() => setHoveredTrack(track.id)}
+      onMouseLeave={() => setHoveredTrack(null)}
       onDragOver={(e) => {
         e.preventDefault()
         e.dataTransfer.dropEffect = 'copy'
