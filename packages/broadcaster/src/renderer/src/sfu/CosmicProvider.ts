@@ -94,9 +94,11 @@ export class CosmicProvider implements SfuProvider {
 
   private openWebSocket(): Promise<void> {
     return new Promise((resolve, reject) => {
-      // Build endpoint URL
-      const base = this.config.serverUrl.replace(/\/$/, '')
-      const url = `${base}/api/dj/stream?key=${encodeURIComponent(this.config.accessKey)}`
+      // Build endpoint URL — extract origin only so a full URL pasted as
+      // serverUrl (e.g. wss://host/api/dj/stream?key=...) doesn't duplicate the path.
+      const parsed = new URL(this.config.serverUrl)
+      const origin = `${parsed.protocol}//${parsed.host}`
+      const url = `${origin}/api/dj/stream?key=${encodeURIComponent(this.config.accessKey)}`
 
       const ws = new WebSocket(url)
       ws.binaryType = 'arraybuffer'
