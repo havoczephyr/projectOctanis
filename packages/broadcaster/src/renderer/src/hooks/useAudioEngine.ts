@@ -61,7 +61,7 @@ export function useAudioEngine(): AudioEngineResult {
   // Eagerly init AudioContext so masterGainNode is always available (e.g. for SFU capture)
   useEffect(() => {
     if (!ctxRef.current) {
-      const ctx = new AudioContext({ latencyHint: 'playback' })
+      const ctx = new AudioContext({ latencyHint: 'playback', sampleRate: 48000 })
       ctxRef.current = ctx
 
       const analyser = ctx.createAnalyser()

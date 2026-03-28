@@ -57,6 +57,8 @@ export class CosmicProvider implements SfuProvider {
 
   async connect(track: MediaStreamTrack): Promise<void> {
     if (this.disposed) throw new Error('Provider disposed')
+    const redactedKey = this.config.accessKey.slice(0, 8) + '...'
+    console.log(`[Cosmic] Connecting to ${this.config.serverUrl} (key: ${redactedKey})`)
     this.setState('connecting')
 
     try {
@@ -64,8 +66,10 @@ export class CosmicProvider implements SfuProvider {
       await this.sendHello()
       this.startPing()
       this.startEncoding(track)
+      console.log('[Cosmic] Connected and streaming')
       this.setState('connected')
     } catch (err) {
+      console.error('[Cosmic] Connection failed:', err)
       this.setState('failed')
       this.cleanup()
       throw err
@@ -74,6 +78,7 @@ export class CosmicProvider implements SfuProvider {
 
   async disconnect(): Promise<void> {
     if (this.state === 'disconnected') return
+    console.log('[Cosmic] Disconnecting')
     this.cleanup()
     this.setState('disconnected')
   }
@@ -100,28 +105,33 @@ export class CosmicProvider implements SfuProvider {
       const origin = `${parsed.protocol}//${parsed.host}`
       const url = `${origin}/api/dj/stream?key=${encodeURIComponent(this.config.accessKey)}`
 
+      console.log('[Cosmic] Opening WebSocket:', url.replace(/key=[^&]+/, 'key=REDACTED'))
+
       const ws = new WebSocket(url)
       ws.binaryType = 'arraybuffer'
 
       const timeout = setTimeout(() => {
+        console.warn('[Cosmic] WebSocket connection timed out after 10s')
         ws.close()
         reject(new Error('WebSocket connection timed out'))
       }, 10_000)
 
       ws.onopen = (): void => {
         clearTimeout(timeout)
+        console.log('[Cosmic] WebSocket opened')
         this.ws = ws
         resolve()
       }
 
       ws.onerror = (): void => {
         clearTimeout(timeout)
+        console.error('[Cosmic] WebSocket error event')
         reject(new Error('WebSocket connection failed'))
       }
 
       ws.onclose = (ev): void => {
+        console.warn(`[Cosmic] WebSocket closed: code=${ev.code} reason="${ev.reason}" wasClean=${ev.wasClean}`)
         if (this.state === 'connected') {
-          console.warn('[Cosmic] WebSocket closed unexpectedly:', ev.code, ev.reason)
           this.setState('failed')
           this.cleanup()
         }
@@ -141,6 +151,8 @@ export class CosmicProvider implements SfuProvider {
     } catch {
       return
     }
+
+    console.log('[Cosmic] Message received:', msg.type, msg.message ?? '')
 
     if (msg.type === 'error') {
       console.error('[Cosmic] Server error:', msg.message)
@@ -188,11 +200,13 @@ export class CosmicProvider implements SfuProvider {
       }
       if (this.config.displayName) hello.displayName = this.config.displayName
 
+      console.log('[Cosmic] Sending hello:', JSON.stringify(hello))
       this.ws.send(JSON.stringify(hello))
     })
   }
 
   private startEncoding(track: MediaStreamTrack): void {
+    console.log('[Cosmic] Starting audio encoder: opus', SAMPLE_RATE, 'Hz,', CHANNELS, 'ch,', BITRATE, 'bps')
     // Set up AudioEncoder (WebCodecs)
     this.encoder = new AudioEncoder({
       output: (chunk) => {
@@ -263,6 +277,7 @@ export class CosmicProvider implements SfuProvider {
   }
 
   private cleanup(): void {
+    console.log('[Cosmic] Cleanup')
     this.readLoopRunning = false
     this.stopPing()
 

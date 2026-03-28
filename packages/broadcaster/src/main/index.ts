@@ -5,6 +5,10 @@ import log from 'electron-log'
 import { registerIpcHandlers } from './ipc/handlers'
 
 log.initialize()
+log.info('Log file:', log.transports.file.getFile().path)
+
+// Cosmic server requires HTTP/1.1 for WebSocket upgrades
+app.commandLine.appendSwitch('disable-http2')
 
 let mainWindow: BrowserWindow | null = null
 
@@ -85,6 +89,13 @@ function createWindow(): void {
     },
   ]
   Menu.setApplicationMenu(Menu.buildFromTemplate(template))
+
+  // Pipe renderer console output to electron-log file
+  mainWindow.webContents.on('console-message', (_event, level, message) => {
+    const methods = ['verbose', 'info', 'warn', 'error'] as const
+    const method = methods[level] ?? 'info'
+    log[method](`[renderer] ${message}`)
+  })
 
   if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
     mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
