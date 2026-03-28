@@ -36,6 +36,7 @@ export function ControlPanel({ onConnect, onDisconnect, onOpenConfig }: ControlP
   const [busy, setBusy] = useState(false)
 
   const isConnected = streamStatus.connectionState === 'connected'
+  const isConnecting = streamStatus.connectionState === 'connecting' || streamStatus.connectionState === 'reconnecting'
   const isActive = streamStatus.connectionState !== 'disconnected' && streamStatus.connectionState !== 'failed'
 
   const handleToggle = async (): Promise<void> => {
@@ -52,6 +53,15 @@ export function ControlPanel({ onConnect, onDisconnect, onOpenConfig }: ControlP
     } finally {
       setBusy(false)
     }
+  }
+
+  const handleCancel = async (): Promise<void> => {
+    try {
+      await onDisconnect()
+    } catch (err) {
+      console.error('[SFU] cancel:', err)
+    }
+    setBusy(false)
   }
 
   return (
@@ -141,11 +151,11 @@ export function ControlPanel({ onConnect, onDisconnect, onOpenConfig }: ControlP
 
           <button
             className={`btn${isActive ? '' : ' btn--primary'}`}
-            onClick={handleToggle}
-            disabled={busy || (!isActive && !sfuConfig)}
+            onClick={isConnecting ? handleCancel : handleToggle}
+            disabled={!isConnecting && (busy || (!isActive && !sfuConfig))}
             style={{ width: '100%', height: 32, fontSize: 11 }}
           >
-            {busy ? '...' : isActive ? '⏹ DISCONNECT' : '▶ CONNECT'}
+            {isConnecting ? '✕ CANCEL' : busy ? '...' : isActive ? '⏹ DISCONNECT' : '▶ CONNECT'}
           </button>
         </div>
 

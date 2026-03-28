@@ -101,12 +101,19 @@ export class CosmicProvider implements SfuProvider {
       const ws = new WebSocket(url)
       ws.binaryType = 'arraybuffer'
 
+      const timeout = setTimeout(() => {
+        ws.close()
+        reject(new Error('WebSocket connection timed out'))
+      }, 10_000)
+
       ws.onopen = (): void => {
+        clearTimeout(timeout)
         this.ws = ws
         resolve()
       }
 
       ws.onerror = (): void => {
+        clearTimeout(timeout)
         reject(new Error('WebSocket connection failed'))
       }
 

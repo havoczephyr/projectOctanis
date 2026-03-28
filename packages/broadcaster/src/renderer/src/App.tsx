@@ -65,7 +65,7 @@ export default function App(): JSX.Element {
   // Keyboard shortcuts
   useEffect(() => {
     const handler = (e: KeyboardEvent): void => {
-      if (e.code === 'Space' && !e.metaKey && !e.ctrlKey) {
+      if (e.code === 'Space' && !e.metaKey && !e.ctrlKey && !configOpen) {
         e.preventDefault()
         if (transportState === 'playing') pause()
         else if (projectFile) play()
@@ -86,7 +86,7 @@ export default function App(): JSX.Element {
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [transportState, projectFile, play, pause, stop])
+  }, [transportState, projectFile, play, pause, stop, configOpen])
 
   const formatTime = (sec: number): string => {
     const m = Math.floor(sec / 60)
