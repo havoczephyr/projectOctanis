@@ -12,8 +12,8 @@ type CountCallback = (count: number) => void
 
 const SAMPLE_RATE = 48_000
 const CHANNELS = 2
-const FRAME_DURATION_MS = 20
-const SAMPLES_PER_FRAME = (SAMPLE_RATE * FRAME_DURATION_MS) / 1000 // 960
+const FRAME_DURATION_MS = 60
+const SAMPLES_PER_FRAME = (SAMPLE_RATE * FRAME_DURATION_MS) / 1000 // 2880
 const PING_INTERVAL_MS = 15_000
 const BITRATE = 128_000
 
@@ -37,6 +37,8 @@ export class CosmicProvider implements SfuProvider {
   private encoder: AudioEncoder | null = null
   private processorReader: ReadableStreamDefaultReader<AudioData> | null = null
   private pingTimer: ReturnType<typeof setInterval> | null = null
+  private paceTimer: ReturnType<typeof setInterval> | null = null
+  private frameQueue: ArrayBuffer[] = []
   private state: SfuConnectionState = 'disconnected'
   private stateCallbacks: StateCallback[] = []
   private countCallbacks: CountCallback[] = []
@@ -206,15 +208,20 @@ export class CosmicProvider implements SfuProvider {
   }
 
   private startEncoding(track: MediaStreamTrack): void {
-    console.log('[Cosmic] Starting audio encoder: opus', SAMPLE_RATE, 'Hz,', CHANNELS, 'ch,', BITRATE, 'bps')
-    // Set up AudioEncoder (WebCodecs)
+    console.log(
+      '[Cosmic] Starting audio encoder: opus',
+      SAMPLE_RATE, 'Hz,',
+      CHANNELS, 'ch,',
+      BITRATE, 'bps,',
+      FRAME_DURATION_MS, 'ms frames'
+    )
+
+    // Set up AudioEncoder (WebCodecs) — queue frames for paced sending
     this.encoder = new AudioEncoder({
       output: (chunk) => {
-        if (this.ws?.readyState === WebSocket.OPEN) {
-          const data = new ArrayBuffer(chunk.byteLength)
-          chunk.copyTo(new Uint8Array(data))
-          this.ws.send(data)
-        }
+        const data = new ArrayBuffer(chunk.byteLength)
+        chunk.copyTo(new Uint8Array(data))
+        this.frameQueue.push(data)
       },
       error: (err) => {
         console.error('[Cosmic] AudioEncoder error:', err)
@@ -229,6 +236,17 @@ export class CosmicProvider implements SfuProvider {
       numberOfChannels: CHANNELS,
       bitrate: BITRATE,
     })
+
+    // Pacing timer — drain one frame per tick at the declared cadence.
+    // Cosmic forwards frames immediately with no jitter buffer, so we must
+    // send exactly one frame per FRAME_DURATION_MS to avoid bursts.
+    this.paceTimer = setInterval(() => {
+      if (this.ws?.readyState !== WebSocket.OPEN) return
+      const frame = this.frameQueue.shift()
+      if (frame) {
+        this.ws.send(frame)
+      }
+    }, FRAME_DURATION_MS)
 
     // Set up MediaStreamTrackProcessor to read PCM from the track
     const processor = new MediaStreamTrackProcessor({ track })
@@ -281,6 +299,12 @@ export class CosmicProvider implements SfuProvider {
     this.readLoopRunning = false
     this.stopPing()
 
+    if (this.paceTimer) {
+      clearInterval(this.paceTimer)
+      this.paceTimer = null
+    }
+    this.frameQueue.length = 0
+
     if (this.processorReader) {
       this.processorReader.cancel().catch(() => {})
       this.processorReader = null
@@ -296,6 +320,5 @@ export class CosmicProvider implements SfuProvider {
       this.ws.close(1000)
       this.ws = null
     }
-
   }
 }

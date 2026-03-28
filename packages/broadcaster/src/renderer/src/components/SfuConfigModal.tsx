@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useBroadcasterStore } from '../store/broadcasterStore'
+import { useFavoritesStore } from '../store/favoritesStore'
 import type { SfuConfig } from '../../../ipcTypes'
 
 interface SfuConfigModalProps {
@@ -12,6 +13,9 @@ type Provider = 'cosmic' | 'janus'
 export function SfuConfigModal({ open, onClose }: SfuConfigModalProps): JSX.Element | null {
   const sfuConfig = useBroadcasterStore((s) => s.sfuConfig)
   const setSfuConfig = useBroadcasterStore((s) => s.setSfuConfig)
+  const favorites = useFavoritesStore((s) => s.favorites)
+  const addFavorite = useFavoritesStore((s) => s.addFavorite)
+  const removeFavorite = useFavoritesStore((s) => s.removeFavorite)
   const backdropRef = useRef<HTMLDivElement>(null)
 
   const [provider, setProvider] = useState<Provider>('cosmic')
@@ -24,6 +28,12 @@ export function SfuConfigModal({ open, onClose }: SfuConfigModalProps): JSX.Elem
   // Janus fields
   const [roomId, setRoomId] = useState('')
   const [secret, setSecret] = useState('')
+
+  // Favorites UI state
+  const [savingFavorite, setSavingFavorite] = useState(false)
+  const [favoriteLabel, setFavoriteLabel] = useState('')
+
+  const filteredFavorites = favorites.filter((f) => f.provider === provider)
 
   // Sync form with store when modal opens
   useEffect(() => {
@@ -39,6 +49,12 @@ export function SfuConfigModal({ open, onClose }: SfuConfigModalProps): JSX.Elem
       }
     }
   }, [open, sfuConfig])
+
+  // Reset favorite save state when modal closes or provider changes
+  useEffect(() => {
+    setSavingFavorite(false)
+    setFavoriteLabel('')
+  }, [open, provider])
 
   // Escape to close
   useEffect(() => {
@@ -157,16 +173,181 @@ export function SfuConfigModal({ open, onClose }: SfuConfigModalProps): JSX.Elem
           </button>
         </div>
 
+        {/* Favorites list */}
+        {filteredFavorites.length > 0 && (
+          <div>
+            <div style={labelStyle}>FAVORITES</div>
+            <div
+              style={{
+                maxHeight: 120,
+                overflowY: 'auto',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 2,
+              }}
+            >
+              {filteredFavorites.map((fav) => (
+                <div
+                  key={fav.id}
+                  onClick={() => {
+                    setServerUrl(fav.serverUrl)
+                    if (fav.displayName) setDisplayName(fav.displayName)
+                    if (fav.provider === 'janus' && fav.roomId != null) {
+                      setRoomId(String(fav.roomId))
+                    }
+                  }}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    padding: '4px 8px',
+                    background: 'var(--bg-input)',
+                    border: '1px solid var(--border-subtle)',
+                    borderRadius: 'var(--radius-sm)',
+                    cursor: 'pointer',
+                    fontSize: 10,
+                    fontFamily: 'var(--font-mono)',
+                    color: 'var(--text-primary)',
+                    transition: 'border-color 0.15s',
+                  }}
+                  onMouseEnter={(e) => {
+                    ;(e.currentTarget as HTMLElement).style.borderColor = 'var(--accent-cyan)'
+                  }}
+                  onMouseLeave={(e) => {
+                    ;(e.currentTarget as HTMLElement).style.borderColor = 'var(--border-subtle)'
+                  }}
+                >
+                  <span style={{ color: 'var(--accent-cyan)', flexShrink: 0 }}>★</span>
+                  <span style={{ flexShrink: 0, color: 'var(--text-secondary)' }}>{fav.label}</span>
+                  <span
+                    style={{
+                      flex: 1,
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                      color: 'var(--text-dim)',
+                      fontSize: 9,
+                    }}
+                  >
+                    {fav.serverUrl}
+                  </span>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      removeFavorite(fav.id)
+                    }}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      color: 'var(--text-dim)',
+                      cursor: 'pointer',
+                      fontSize: 11,
+                      padding: '0 2px',
+                      lineHeight: 1,
+                      flexShrink: 0,
+                    }}
+                    title="Remove favorite"
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Server URL — shared */}
         <div>
-          <div style={labelStyle}>SERVER URL</div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div style={labelStyle}>SERVER URL</div>
+            {!savingFavorite && (
+              <button
+                onClick={() => {
+                  try {
+                    const hostname = new URL(serverUrl).hostname
+                    setFavoriteLabel(hostname)
+                  } catch {
+                    setFavoriteLabel(serverUrl)
+                  }
+                  setSavingFavorite(true)
+                }}
+                disabled={!serverUrl.trim()}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: serverUrl.trim() ? 'var(--accent-cyan)' : 'var(--text-dim)',
+                  cursor: serverUrl.trim() ? 'pointer' : 'default',
+                  fontSize: 11,
+                  padding: 0,
+                  lineHeight: 1,
+                  opacity: serverUrl.trim() ? 1 : 0.4,
+                }}
+                title="Save to favorites"
+              >
+                ☆ SAVE
+              </button>
+            )}
+          </div>
+          {savingFavorite && (
+            <div style={{ display: 'flex', gap: 4, marginBottom: 4 }}>
+              <input
+                type="text"
+                placeholder="Label"
+                value={favoriteLabel}
+                onChange={(e) => setFavoriteLabel(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && favoriteLabel.trim()) {
+                    addFavorite({
+                      provider,
+                      label: favoriteLabel.trim(),
+                      serverUrl: serverUrl.trim(),
+                      roomId: provider === 'janus' && roomId ? Number(roomId) : undefined,
+                      displayName: displayName || undefined,
+                    })
+                    setSavingFavorite(false)
+                    setFavoriteLabel('')
+                  } else if (e.key === 'Escape') {
+                    setSavingFavorite(false)
+                  }
+                }}
+                style={{ ...inputStyle, flex: 1 }}
+                autoFocus
+              />
+              <button
+                className="btn"
+                onClick={() => {
+                  if (!favoriteLabel.trim()) return
+                  addFavorite({
+                    provider,
+                    label: favoriteLabel.trim(),
+                    serverUrl: serverUrl.trim(),
+                    roomId: provider === 'janus' && roomId ? Number(roomId) : undefined,
+                    displayName: displayName || undefined,
+                  })
+                  setSavingFavorite(false)
+                  setFavoriteLabel('')
+                }}
+                disabled={!favoriteLabel.trim()}
+                style={{ height: 26, fontSize: 9, padding: '0 8px' }}
+              >
+                ★ ADD
+              </button>
+              <button
+                className="btn"
+                onClick={() => setSavingFavorite(false)}
+                style={{ height: 26, fontSize: 9, padding: '0 6px' }}
+              >
+                ✕
+              </button>
+            </div>
+          )}
           <input
             type="text"
             placeholder={provider === 'cosmic' ? 'wss://cosmic.example.com' : 'wss://server/janus'}
             value={serverUrl}
             onChange={(e) => setServerUrl(e.target.value)}
             style={inputStyle}
-            autoFocus
+            autoFocus={!savingFavorite}
           />
         </div>
 
