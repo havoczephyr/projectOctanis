@@ -5,6 +5,16 @@ import log from 'electron-log'
 import { registerIpcHandlers } from './ipc/handlers'
 
 log.initialize()
+
+// Prevent EPIPE crashes when stdout/stderr pipe breaks (e.g. during
+// high-frequency logging from the renderer console transport)
+for (const stream of [process.stdout, process.stderr]) {
+  stream.on('error', (err: NodeJS.ErrnoException) => {
+    if (err.code === 'EPIPE') return
+    throw err
+  })
+}
+
 log.info('Log file:', log.transports.file.getFile().path)
 
 // Cosmic server requires HTTP/1.1 for WebSocket upgrades
