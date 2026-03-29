@@ -12,29 +12,30 @@ type CountCallback = (count: number) => void
 
 const SAMPLE_RATE = 48_000
 const CHANNELS = 2
-const FRAME_DURATION_MS = 60
-const SAMPLES_PER_FRAME = (SAMPLE_RATE * FRAME_DURATION_MS) / 1000 // 2880
+const FRAME_DURATION_MS = 20
+const SAMPLES_PER_FRAME = (SAMPLE_RATE * FRAME_DURATION_MS) / 1000 // 960
+const PCM_FRAME_SAMPLES = SAMPLES_PER_FRAME * CHANNELS // 1920 interleaved samples
+const PCM_FRAME_BYTES = PCM_FRAME_SAMPLES * 2 // 3840 bytes (s16le)
 const PING_INTERVAL_MS = 15_000
 const BITRATE = 128_000
 
 /**
  * Cosmic DJ streaming provider.
  *
- * Streams pre-encoded Opus frames over WebSocket to a Cosmic instance,
- * which forwards them to Janus internally.
+ * Streams Opus frames over WebSocket to a Cosmic instance, which
+ * forwards them to Janus internally.
  *
- * Protocol:
- *   1. WebSocket connect to /api/dj/stream?key=<accessKey>
- *   2. Send hello (encoding params) → receive ready
- *   3. Encode audio via WebCodecs AudioEncoder → send binary Opus frames
- *   4. Ping/pong keepalive every 15s
+ * Encoding is done via @discordjs/opus in the Electron main process
+ * (same library Cosmic uses), invoked over IPC. The renderer reads
+ * PCM from a MediaStreamTrackProcessor, converts f32-planar to s16le
+ * interleaved, accumulates 20ms frames (3840 bytes), encodes via IPC,
+ * and sends the resulting Opus frames over WebSocket.
  */
 export class CosmicProvider implements SfuProvider {
   readonly name = 'cosmic'
 
   private config: CosmicConfig
   private ws: WebSocket | null = null
-  private encoder: AudioEncoder | null = null
   private processorReader: ReadableStreamDefaultReader<AudioData> | null = null
   private pingTimer: ReturnType<typeof setInterval> | null = null
   private paceTimer: ReturnType<typeof setInterval> | null = null
@@ -44,6 +45,10 @@ export class CosmicProvider implements SfuProvider {
   private countCallbacks: CountCallback[] = []
   private disposed = false
   private readLoopRunning = false
+
+  // PCM accumulation buffer for assembling 20ms frames
+  private pcmAccumulator = new Int16Array(PCM_FRAME_SAMPLES * 2) // double-buffer headroom
+  private pcmOffset = 0
 
   constructor(config: CosmicConfig) {
     this.config = config
@@ -64,6 +69,13 @@ export class CosmicProvider implements SfuProvider {
     this.setState('connecting')
 
     try {
+      // Initialize the native Opus encoder in the main process
+      await window.octanis.opus.init({
+        sampleRate: SAMPLE_RATE,
+        channels: CHANNELS,
+        bitrate: BITRATE,
+      })
+
       await this.openWebSocket()
       await this.sendHello()
       this.startPing()
@@ -101,8 +113,6 @@ export class CosmicProvider implements SfuProvider {
 
   private openWebSocket(): Promise<void> {
     return new Promise((resolve, reject) => {
-      // Build endpoint URL — extract origin only so a full URL pasted as
-      // serverUrl (e.g. wss://host/api/dj/stream?key=...) doesn't duplicate the path.
       const parsed = new URL(this.config.serverUrl)
       const origin = `${parsed.protocol}//${parsed.host}`
       const url = `${origin}/api/dj/stream?key=${encodeURIComponent(this.config.accessKey)}`
@@ -161,7 +171,6 @@ export class CosmicProvider implements SfuProvider {
       this.setState('failed')
       this.cleanup()
     }
-    // pong and ready are handled inline by sendHello / ping
   }
 
   private sendHello(): Promise<void> {
@@ -171,7 +180,6 @@ export class CosmicProvider implements SfuProvider {
         return
       }
 
-      // Temporarily override message handler to wait for ready/error
       const originalOnMessage = this.ws.onmessage
       const timeout = setTimeout(() => {
         if (this.ws) this.ws.onmessage = originalOnMessage
@@ -209,37 +217,14 @@ export class CosmicProvider implements SfuProvider {
 
   private startEncoding(track: MediaStreamTrack): void {
     console.log(
-      '[Cosmic] Starting audio encoder: opus',
+      '[Cosmic] Starting native opus encoder:',
       SAMPLE_RATE, 'Hz,',
       CHANNELS, 'ch,',
       BITRATE, 'bps,',
       FRAME_DURATION_MS, 'ms frames'
     )
 
-    // Set up AudioEncoder (WebCodecs) — queue frames for paced sending
-    this.encoder = new AudioEncoder({
-      output: (chunk) => {
-        const data = new ArrayBuffer(chunk.byteLength)
-        chunk.copyTo(new Uint8Array(data))
-        this.frameQueue.push(data)
-      },
-      error: (err) => {
-        console.error('[Cosmic] AudioEncoder error:', err)
-        this.setState('failed')
-        this.cleanup()
-      },
-    })
-
-    this.encoder.configure({
-      codec: 'opus',
-      sampleRate: SAMPLE_RATE,
-      numberOfChannels: CHANNELS,
-      bitrate: BITRATE,
-    })
-
     // Pacing timer — drain one frame per tick at the declared cadence.
-    // Cosmic forwards frames immediately with no jitter buffer, so we must
-    // send exactly one frame per FRAME_DURATION_MS to avoid bursts.
     this.paceTimer = setInterval(() => {
       if (this.ws?.readyState !== WebSocket.OPEN) return
       const frame = this.frameQueue.shift()
@@ -252,6 +237,7 @@ export class CosmicProvider implements SfuProvider {
     const processor = new MediaStreamTrackProcessor({ track })
     this.processorReader = processor.readable.getReader()
     this.readLoopRunning = true
+    this.pcmOffset = 0
     this.readLoop()
   }
 
@@ -259,60 +245,69 @@ export class CosmicProvider implements SfuProvider {
     const reader = this.processorReader
     if (!reader) return
 
-    let frameCount = 0
-    // Monotonic timestamp for the encoder — the MediaStreamTrackProcessor
-    // timestamps are based on AudioContext.currentTime which may have been
-    // running for a long time before streaming starts, causing the encoder
-    // to see huge gaps and produce garbled output.
-    let encoderTimestamp = 0
+    let chunkCount = 0
+    let encodeCount = 0
     try {
       while (this.readLoopRunning && !this.disposed) {
         const { value: audioData, done } = await reader.read()
         if (done || !audioData) break
 
-        if (frameCount < 3) {
+        if (chunkCount < 3) {
           console.log(
-            `[Cosmic] AudioData #${frameCount}:`,
+            `[Cosmic] AudioData #${chunkCount}:`,
             `format=${audioData.format}`,
             `sampleRate=${audioData.sampleRate}`,
             `channels=${audioData.numberOfChannels}`,
-            `frames=${audioData.numberOfFrames}`,
-            `origTimestamp=${audioData.timestamp}`,
-            `assignedTimestamp=${encoderTimestamp}`
+            `frames=${audioData.numberOfFrames}`
           )
         }
-        frameCount++
+        chunkCount++
 
-        // Re-wrap AudioData with a monotonic timestamp so the encoder
-        // sees a continuous stream starting from 0
-        const buf = new ArrayBuffer(audioData.allocationSize({ planeIndex: 0 }) * audioData.numberOfChannels)
-        const bytesPerPlane = audioData.allocationSize({ planeIndex: 0 })
-        for (let ch = 0; ch < audioData.numberOfChannels; ch++) {
-          audioData.copyTo(new Uint8Array(buf, ch * bytesPerPlane, bytesPerPlane), { planeIndex: ch })
+        // Convert f32-planar AudioData to s16le interleaved and accumulate
+        const numFrames = audioData.numberOfFrames
+        const numChannels = audioData.numberOfChannels
+
+        // Extract planar f32 data per channel
+        const planes: Float32Array[] = []
+        for (let ch = 0; ch < numChannels; ch++) {
+          const plane = new Float32Array(numFrames)
+          audioData.copyTo(plane, { planeIndex: ch })
+          planes.push(plane)
         }
-
-        const corrected = new AudioData({
-          format: audioData.format as AudioSampleFormat,
-          sampleRate: audioData.sampleRate,
-          numberOfFrames: audioData.numberOfFrames,
-          numberOfChannels: audioData.numberOfChannels,
-          timestamp: encoderTimestamp,
-          data: buf,
-        })
-        encoderTimestamp += audioData.duration
         audioData.close()
 
-        if (this.encoder && this.encoder.state !== 'closed') {
-          this.encoder.encode(corrected)
+        // Interleave and convert to s16le
+        for (let i = 0; i < numFrames; i++) {
+          for (let ch = 0; ch < numChannels; ch++) {
+            const sample = Math.max(-1, Math.min(1, planes[ch][i]))
+            this.pcmAccumulator[this.pcmOffset++] = sample < 0
+              ? sample * 0x8000
+              : sample * 0x7FFF
+          }
+
+          // When we have a full 20ms frame, encode it
+          if (this.pcmOffset >= PCM_FRAME_SAMPLES) {
+            const pcmFrame = this.pcmAccumulator.slice(0, PCM_FRAME_SAMPLES)
+            // Send s16le PCM to main process for native Opus encoding
+            const opusFrame = await window.octanis.opus.encode(pcmFrame.buffer)
+            this.frameQueue.push(opusFrame)
+            encodeCount++
+
+            // Shift any remainder to the front
+            const remainder = this.pcmOffset - PCM_FRAME_SAMPLES
+            if (remainder > 0) {
+              this.pcmAccumulator.copyWithin(0, PCM_FRAME_SAMPLES, this.pcmOffset)
+            }
+            this.pcmOffset = remainder
+          }
         }
-        corrected.close()
       }
     } catch (err) {
       if (this.readLoopRunning) {
         console.error('[Cosmic] Read loop error:', err)
       }
     }
-    console.log(`[Cosmic] Read loop ended, processed ${frameCount} AudioData chunks`)
+    console.log(`[Cosmic] Read loop ended: ${chunkCount} AudioData chunks, ${encodeCount} Opus frames encoded`)
   }
 
   private startPing(): void {
@@ -347,10 +342,7 @@ export class CosmicProvider implements SfuProvider {
       this.processorReader = null
     }
 
-    if (this.encoder && this.encoder.state !== 'closed') {
-      try { this.encoder.close() } catch { /* ignore */ }
-      this.encoder = null
-    }
+    window.octanis.opus.close().catch(() => {})
 
     if (this.ws) {
       this.ws.onclose = null

@@ -21,23 +21,26 @@ const DEFAULT_BITRATE = 128_000
 /**
  * Direct RTP streaming provider.
  *
- * Encodes audio via WebCodecs AudioEncoder (Opus), then sends the raw
- * Opus frames to the Electron main process via IPC. The main process
- * wraps each frame in a 12-byte RTP header and sends it over UDP
- * directly to a Janus Streaming Plugin — identical to what Cosmic's
- * DjRtpForwarder does, but without the WebSocket relay middleman.
+ * Encodes audio via @discordjs/opus in the main process (same encoder
+ * Cosmic uses), then sends the Opus frames to the main process RTP
+ * forwarder which wraps each in a 12-byte RTP header and sends UDP
+ * directly to a Janus Streaming Plugin.
  */
 export class DirectRtpProvider implements SfuProvider {
   readonly name = 'direct-rtp'
 
   private config: DirectRtpConfig
-  private encoder: AudioEncoder | null = null
   private processorReader: ReadableStreamDefaultReader<AudioData> | null = null
   private state: SfuConnectionState = 'disconnected'
   private stateCallbacks: StateCallback[] = []
   private countCallbacks: CountCallback[] = []
   private disposed = false
   private readLoopRunning = false
+
+  // PCM accumulation
+  private pcmAccumulator: Int16Array = new Int16Array(0)
+  private pcmOffset = 0
+  private pcmFrameSamples = 0
 
   constructor(config: DirectRtpConfig) {
     this.config = config
@@ -59,6 +62,10 @@ export class DirectRtpProvider implements SfuProvider {
     const frameDurationMs = this.config.frameDurationMs ?? DEFAULT_FRAME_DURATION_MS
     const bitrate = this.config.bitrate ?? DEFAULT_BITRATE
 
+    this.pcmFrameSamples = Math.round(sampleRate * (frameDurationMs / 1000)) * channels
+    this.pcmAccumulator = new Int16Array(this.pcmFrameSamples * 2)
+    this.pcmOffset = 0
+
     console.log(
       `[DirectRTP] Connecting to ${this.config.janusHost}:${this.config.janusPort}`,
       `(${sampleRate}Hz, ${channels}ch, ${frameDurationMs}ms, ${bitrate}bps)`
@@ -66,6 +73,9 @@ export class DirectRtpProvider implements SfuProvider {
     this.setState('connecting')
 
     try {
+      // Initialize native Opus encoder
+      await window.octanis.opus.init({ sampleRate, channels, bitrate })
+
       // Start the UDP forwarder in the main process
       await window.octanis.rtp.start({
         host: this.config.janusHost,
@@ -75,7 +85,7 @@ export class DirectRtpProvider implements SfuProvider {
         frameDurationMs,
       })
 
-      this.startEncoding(track, sampleRate, channels, bitrate)
+      this.startEncoding(track, channels)
       console.log('[DirectRTP] Connected and streaming')
       this.setState('connected')
     } catch (err) {
@@ -109,97 +119,78 @@ export class DirectRtpProvider implements SfuProvider {
     for (const cb of this.stateCallbacks) cb(state)
   }
 
-  private startEncoding(
-    track: MediaStreamTrack,
-    sampleRate: number,
-    channels: number,
-    bitrate: number
-  ): void {
-    console.log('[DirectRTP] Starting audio encoder')
-
-    this.encoder = new AudioEncoder({
-      output: (chunk) => {
-        const data = new ArrayBuffer(chunk.byteLength)
-        chunk.copyTo(new Uint8Array(data))
-        window.octanis.rtp.sendFrame(data)
-      },
-      error: (err) => {
-        console.error('[DirectRTP] AudioEncoder error:', err)
-        this.setState('failed')
-        this.cleanup()
-      },
-    })
-
-    this.encoder.configure({
-      codec: 'opus',
-      sampleRate,
-      numberOfChannels: channels,
-      bitrate,
-    })
+  private startEncoding(track: MediaStreamTrack, channels: number): void {
+    console.log('[DirectRTP] Starting native opus encoder')
 
     const processor = new MediaStreamTrackProcessor({ track })
     this.processorReader = processor.readable.getReader()
     this.readLoopRunning = true
-    this.readLoop()
+    this.readLoop(channels)
   }
 
-  private async readLoop(): Promise<void> {
+  private async readLoop(channels: number): Promise<void> {
     const reader = this.processorReader
     if (!reader) return
 
-    let frameCount = 0
-    let encoderTimestamp = 0
+    let chunkCount = 0
+    let encodeCount = 0
     try {
       while (this.readLoopRunning && !this.disposed) {
         const { value: audioData, done } = await reader.read()
         if (done || !audioData) break
 
-        if (frameCount < 3) {
+        if (chunkCount < 3) {
           console.log(
-            `[DirectRTP] AudioData #${frameCount}:`,
+            `[DirectRTP] AudioData #${chunkCount}:`,
             `format=${audioData.format}`,
             `sampleRate=${audioData.sampleRate}`,
             `channels=${audioData.numberOfChannels}`,
-            `frames=${audioData.numberOfFrames}`,
-            `origTimestamp=${audioData.timestamp}`,
-            `assignedTimestamp=${encoderTimestamp}`
+            `frames=${audioData.numberOfFrames}`
           )
         }
-        frameCount++
+        chunkCount++
 
-        // Re-wrap AudioData with monotonic timestamp starting from 0
-        const buf = new ArrayBuffer(
-          audioData.allocationSize({ planeIndex: 0 }) * audioData.numberOfChannels
-        )
-        const bytesPerPlane = audioData.allocationSize({ planeIndex: 0 })
-        for (let ch = 0; ch < audioData.numberOfChannels; ch++) {
-          audioData.copyTo(new Uint8Array(buf, ch * bytesPerPlane, bytesPerPlane), {
-            planeIndex: ch,
-          })
+        const numFrames = audioData.numberOfFrames
+        const numChannels = audioData.numberOfChannels
+
+        // Extract planar f32 data
+        const planes: Float32Array[] = []
+        for (let ch = 0; ch < numChannels; ch++) {
+          const plane = new Float32Array(numFrames)
+          audioData.copyTo(plane, { planeIndex: ch })
+          planes.push(plane)
         }
-
-        const corrected = new AudioData({
-          format: audioData.format as AudioSampleFormat,
-          sampleRate: audioData.sampleRate,
-          numberOfFrames: audioData.numberOfFrames,
-          numberOfChannels: audioData.numberOfChannels,
-          timestamp: encoderTimestamp,
-          data: buf,
-        })
-        encoderTimestamp += audioData.duration
         audioData.close()
 
-        if (this.encoder && this.encoder.state !== 'closed') {
-          this.encoder.encode(corrected)
+        // Interleave and convert to s16le, accumulate
+        for (let i = 0; i < numFrames; i++) {
+          for (let ch = 0; ch < numChannels; ch++) {
+            const sample = Math.max(-1, Math.min(1, planes[ch][i]))
+            this.pcmAccumulator[this.pcmOffset++] = sample < 0
+              ? sample * 0x8000
+              : sample * 0x7FFF
+          }
+
+          if (this.pcmOffset >= this.pcmFrameSamples) {
+            const pcmFrame = this.pcmAccumulator.slice(0, this.pcmFrameSamples)
+            const opusFrame = await window.octanis.opus.encode(pcmFrame.buffer)
+            window.octanis.rtp.sendFrame(opusFrame)
+            encodeCount++
+
+            const remainder = this.pcmOffset - this.pcmFrameSamples
+            if (remainder > 0) {
+              this.pcmAccumulator.copyWithin(0, this.pcmFrameSamples, this.pcmOffset)
+            }
+            this.pcmOffset = remainder
+          }
         }
-        corrected.close()
       }
     } catch (err) {
       if (this.readLoopRunning) {
         console.error('[DirectRTP] Read loop error:', err)
       }
     }
-    console.log(`[DirectRTP] Read loop ended, processed ${frameCount} AudioData chunks`)
+    console.log(`[DirectRTP] Read loop ended: ${chunkCount} chunks, ${encodeCount} Opus frames`)
   }
 
   private cleanup(): void {
@@ -211,13 +202,6 @@ export class DirectRtpProvider implements SfuProvider {
       this.processorReader = null
     }
 
-    if (this.encoder && this.encoder.state !== 'closed') {
-      try {
-        this.encoder.close()
-      } catch {
-        /* ignore */
-      }
-      this.encoder = null
-    }
+    window.octanis.opus.close().catch(() => {})
   }
 }

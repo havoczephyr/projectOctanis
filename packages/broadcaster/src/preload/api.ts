@@ -19,6 +19,13 @@ export const broadcasterApi = {
     ): Promise<DecodeAudioResult> =>
       ipcRenderer.invoke('ffmpeg:decodeAudioFile', audioPath, sampleRate, channels),
   },
+  opus: {
+    init: (config: { sampleRate: number; channels: number; bitrate: number }): Promise<void> =>
+      ipcRenderer.invoke('opus:init', config),
+    encode: (pcm: ArrayBuffer): Promise<ArrayBuffer> =>
+      ipcRenderer.invoke('opus:encode', pcm),
+    close: (): Promise<void> => ipcRenderer.invoke('opus:close'),
+  },
   rtp: {
     start: (config: {
       host: string
