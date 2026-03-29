@@ -7,3 +7,4 @@ out/
 packages/editor/out/
 packages/editor/dist/
 packages/broadcaster/dist/
+diagnosticTools/output/

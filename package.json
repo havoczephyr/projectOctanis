@@ -12,13 +12,15 @@
     "build": "npm run build --workspace=packages/shared && npm run build --workspace=packages/editor && npm run build --workspace=packages/broadcaster",
     "build:shared": "npm run build --workspace=packages/shared",
     "test": "vitest run",
-    "lint": "eslint packages/*/src --ext .ts,.tsx"
+    "lint": "eslint packages/*/src --ext .ts,.tsx",
+    "diag:cosmic": "node diagnosticTools/cosmic-diag.mjs"
   },
   "devDependencies": {
     "electron": "^41.0.3",
     "eslint": "^9.x",
     "prettier": "^3.x",
     "typescript": "^5.9.3",
-    "vitest": "^2.x"
+    "vitest": "^2.x",
+    "ws": "^8.20.0"
   }
 }

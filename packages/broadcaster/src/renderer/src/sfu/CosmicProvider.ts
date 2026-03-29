@@ -259,23 +259,60 @@ export class CosmicProvider implements SfuProvider {
     const reader = this.processorReader
     if (!reader) return
 
+    let frameCount = 0
+    // Monotonic timestamp for the encoder — the MediaStreamTrackProcessor
+    // timestamps are based on AudioContext.currentTime which may have been
+    // running for a long time before streaming starts, causing the encoder
+    // to see huge gaps and produce garbled output.
+    let encoderTimestamp = 0
     try {
       while (this.readLoopRunning && !this.disposed) {
         const { value: audioData, done } = await reader.read()
         if (done || !audioData) break
 
-        // AudioEncoder handles Opus frame sizing internally —
-        // feed all incoming AudioData directly
-        if (this.encoder && this.encoder.state !== 'closed') {
-          this.encoder.encode(audioData)
+        if (frameCount < 3) {
+          console.log(
+            `[Cosmic] AudioData #${frameCount}:`,
+            `format=${audioData.format}`,
+            `sampleRate=${audioData.sampleRate}`,
+            `channels=${audioData.numberOfChannels}`,
+            `frames=${audioData.numberOfFrames}`,
+            `origTimestamp=${audioData.timestamp}`,
+            `assignedTimestamp=${encoderTimestamp}`
+          )
         }
+        frameCount++
+
+        // Re-wrap AudioData with a monotonic timestamp so the encoder
+        // sees a continuous stream starting from 0
+        const buf = new ArrayBuffer(audioData.allocationSize({ planeIndex: 0 }) * audioData.numberOfChannels)
+        const bytesPerPlane = audioData.allocationSize({ planeIndex: 0 })
+        for (let ch = 0; ch < audioData.numberOfChannels; ch++) {
+          audioData.copyTo(new Uint8Array(buf, ch * bytesPerPlane, bytesPerPlane), { planeIndex: ch })
+        }
+
+        const corrected = new AudioData({
+          format: audioData.format as AudioSampleFormat,
+          sampleRate: audioData.sampleRate,
+          numberOfFrames: audioData.numberOfFrames,
+          numberOfChannels: audioData.numberOfChannels,
+          timestamp: encoderTimestamp,
+          data: buf,
+        })
+        encoderTimestamp += audioData.duration
         audioData.close()
+
+        if (this.encoder && this.encoder.state !== 'closed') {
+          this.encoder.encode(corrected)
+        }
+        corrected.close()
       }
     } catch (err) {
       if (this.readLoopRunning) {
         console.error('[Cosmic] Read loop error:', err)
       }
     }
+    console.log(`[Cosmic] Read loop ended, processed ${frameCount} AudioData chunks`)
   }
 
   private startPing(): void {
