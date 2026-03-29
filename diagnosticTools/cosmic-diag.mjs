@@ -1,13 +1,14 @@
 /**
  * Cosmic DJ Streaming Diagnostic Server
  *
- * A local fake Cosmic server that speaks the exact DJ WebSocket protocol,
- * captures Opus frames, decodes them to WAV via FFmpeg, and prints
+ * A local fake Cosmic server that speaks the exact DJ WebSocket protocol
+ * AND listens for raw RTP/UDP Opus frames (Direct RTP provider).
+ * Captures Opus frames, decodes them to WAV via FFmpeg, and prints
  * ingest diagnostics matched to Cosmic's DjModeService.recordFrame().
  *
  * Usage:
- *   npm run diag:cosmic
- *   npm run diag:cosmic -- --port 9777
+ *   npm run diag:cosmic                          # WebSocket on 9777, RTP on 5002
+ *   npm run diag:cosmic -- --port 9777 --rtp-port 5002
  */
 
 import { WebSocketServer } from 'ws'
@@ -18,6 +19,7 @@ import { fileURLToPath } from 'node:url'
 import { createRequire } from 'node:module'
 import { performance } from 'node:perf_hooks'
 import http from 'node:http'
+import dgram from 'node:dgram'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const require = createRequire(import.meta.url)
@@ -27,6 +29,8 @@ const FFMPEG_PATH = require('ffmpeg-static')
 const args = process.argv.slice(2)
 const portIdx = args.indexOf('--port')
 const PORT = portIdx !== -1 && args[portIdx + 1] ? Number(args[portIdx + 1]) : 9777
+const rtpPortIdx = args.indexOf('--rtp-port')
+const RTP_PORT = rtpPortIdx !== -1 && args[rtpPortIdx + 1] ? Number(args[rtpPortIdx + 1]) : 5002
 const OUTPUT_DIR = join(__dirname, 'output')
 const DUMMY_KEY = '00000000000000000000000000000000'
 
@@ -334,6 +338,9 @@ function log(msg) {
 // ── HTTP + WebSocket server ─────────────────────────────────
 let activeSession = null
 let activeWs = null
+let rtpSession = null
+let rtpIdleTimer = null
+const RTP_IDLE_TIMEOUT_MS = 3000 // finalize RTP session after 3s of silence
 
 const httpServer = http.createServer((req, res) => {
   // Reject non-upgrade HTTP requests to the stream endpoint
@@ -441,20 +448,80 @@ wss.on('connection', (ws, req) => {
   })
 })
 
-// ── Finalization ────────────────────────────────────────────
-async function finalize() {
-  const session = activeSession
-  activeWs = null
-  activeSession = null
+// ── RTP/UDP listener ───────────────────────────────────────
+const RTP_HEADER_SIZE = 12
 
+const udpSocket = dgram.createSocket('udp4')
+
+udpSocket.on('message', (packet, rinfo) => {
+  if (packet.length < RTP_HEADER_SIZE) return // too small for RTP
+
+  // Parse RTP header
+  const version = (packet[0] >> 6) & 0x03
+  if (version !== 2) return // not RTP v2
+
+  const payloadType = packet[1] & 0x7f
+  const seqNum = packet.readUInt16BE(2)
+  const opusFrame = packet.subarray(RTP_HEADER_SIZE)
+
+  if (opusFrame.length === 0) return
+
+  // Start a new session on first RTP packet
+  if (!rtpSession) {
+    rtpSession = new Session()
+    rtpSession.sampleRate = 48000
+    rtpSession.channels = 2
+    rtpSession.frameDurationMs = 20 // will be refined from timestamps
+    rtpSession.helloReceived = true
+    rtpSession.readyTime = performance.now()
+    log(`RTP stream started from ${rinfo.address}:${rinfo.port} (PT=${payloadType})`)
+  }
+
+  rtpSession.recordFrame(opusFrame)
+
+  // Log first few packets for debug
+  if (rtpSession.ingestFrameCount <= 3) {
+    log(`RTP #${seqNum}: ${opusFrame.length} bytes, PT=${payloadType}`)
+  }
+
+  // Reset idle timer — finalize after silence
+  if (rtpIdleTimer) clearTimeout(rtpIdleTimer)
+  rtpIdleTimer = setTimeout(() => {
+    log('RTP stream idle for 3s — finalizing session')
+    finalizeRtp()
+  }, RTP_IDLE_TIMEOUT_MS)
+})
+
+udpSocket.on('error', (err) => {
+  log(`UDP error: ${err.message}`)
+})
+
+async function finalizeRtp() {
+  const session = rtpSession
+  rtpSession = null
+  if (rtpIdleTimer) {
+    clearTimeout(rtpIdleTimer)
+    rtpIdleTimer = null
+  }
+  if (!session || session.frames.length === 0) {
+    log('RTP: No frames captured')
+    return
+  }
+  await finalizeSession(session, 'rtp')
+  console.log('Waiting for next connection...')
+}
+
+// ── Finalization ────────────────────────────────────────────
+async function finalizeSession(session, source = 'ws') {
   if (!session || session.frames.length === 0) {
     log('No frames captured — nothing to write')
     return
   }
 
   const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
-  const oggPath = join(OUTPUT_DIR, `session-${ts}.ogg`)
-  const wavPath = join(OUTPUT_DIR, `session-${ts}.wav`)
+  const prefix = source === 'rtp' ? 'rtp' : 'session'
+  const oggPath = join(OUTPUT_DIR, `${prefix}-${ts}.ogg`)
+  const wavPath = join(OUTPUT_DIR, `${prefix}-${ts}.wav`)
 
   // Write Ogg
   session.writeOgg(oggPath)
@@ -470,7 +537,7 @@ async function finalize() {
   const s = session.getSummary()
   console.log('')
   console.log('══════════════════════════════════════════════')
-  console.log('  Session Summary')
+  console.log(`  Session Summary (${source.toUpperCase()})`)
   console.log('══════════════════════════════════════════════')
   console.log(`  Duration:          ${s.elapsedSec}s`)
   console.log(`  Total frames:      ${s.totalFrames}`)
@@ -488,21 +555,33 @@ async function finalize() {
   console.log(`    ${wavPath}`)
   console.log('══════════════════════════════════════════════')
   console.log('')
+}
+
+async function finalize() {
+  const session = activeSession
+  activeWs = null
+  activeSession = null
+  await finalizeSession(session, 'ws')
   console.log('Waiting for next connection...')
 }
 
 // ── Startup ─────────────────────────────────────────────────
 httpServer.listen(PORT, () => {
-  console.log('')
-  console.log('══════════════════════════════════════════════')
-  console.log(`  Cosmic Diagnostic Server · port ${PORT}`)
-  console.log('══════════════════════════════════════════════')
-  console.log('  Configure the broadcaster:')
-  console.log(`    Server URL:  ws://localhost:${PORT}`)
-  console.log(`    Access Key:  ${DUMMY_KEY}`)
-  console.log('══════════════════════════════════════════════')
-  console.log('')
-  console.log('Waiting for connection...')
+  udpSocket.bind(RTP_PORT, () => {
+    console.log('')
+    console.log('══════════════════════════════════════════════')
+    console.log('  Cosmic Diagnostic Server')
+    console.log('══════════════════════════════════════════════')
+    console.log('  WebSocket (Cosmic provider):')
+    console.log(`    Server URL:  ws://localhost:${PORT}`)
+    console.log(`    Access Key:  ${DUMMY_KEY}`)
+    console.log('  Direct RTP (UDP):')
+    console.log(`    Janus Host:  127.0.0.1`)
+    console.log(`    Janus Port:  ${RTP_PORT}`)
+    console.log('══════════════════════════════════════════════')
+    console.log('')
+    console.log('Waiting for connection...')
+  })
 })
 
 // ── Graceful shutdown ───────────────────────────────────────
@@ -512,7 +591,11 @@ process.on('SIGINT', async () => {
     try { activeWs.close(1000, 'Server shutting down') } catch {}
     await finalize()
   }
+  if (rtpSession) {
+    await finalizeRtp()
+  }
   wss.close()
   httpServer.close()
+  udpSocket.close()
   process.exit(0)
 })
