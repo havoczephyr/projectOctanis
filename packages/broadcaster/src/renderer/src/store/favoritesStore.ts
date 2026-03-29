@@ -6,10 +6,12 @@ const MAX_FAVORITES = 20
 
 export interface SfuFavorite {
   id: string
-  provider: 'cosmic' | 'janus'
+  provider: 'cosmic' | 'janus' | 'direct-rtp'
   label: string
   serverUrl: string
   roomId?: number
+  janusHost?: string
+  janusPort?: number
   displayName?: string
 }
 

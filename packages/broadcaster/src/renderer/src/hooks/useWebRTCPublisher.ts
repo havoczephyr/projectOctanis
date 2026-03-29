@@ -4,6 +4,7 @@ import type { SfuConfig, SfuConnectionState } from '../../../ipcTypes'
 import type { SfuProvider } from '../sfu/types'
 import { JanusProvider } from '../sfu/JanusProvider'
 import { CosmicProvider } from '../sfu/CosmicProvider'
+import { DirectRtpProvider } from '../sfu/DirectRtpProvider'
 
 function createProvider(config: SfuConfig): SfuProvider {
   switch (config.provider) {
@@ -19,6 +20,15 @@ function createProvider(config: SfuConfig): SfuProvider {
         serverUrl: config.serverUrl,
         accessKey: config.accessKey,
         displayName: config.displayName,
+      })
+    case 'direct-rtp':
+      return new DirectRtpProvider({
+        janusHost: config.janusHost,
+        janusPort: config.janusPort,
+        sampleRate: config.sampleRate,
+        channels: config.channels,
+        frameDurationMs: config.frameDurationMs,
+        bitrate: config.bitrate,
       })
     default:
       throw new Error(`Unknown SFU provider: ${(config as { provider: string }).provider}`)
@@ -75,12 +85,21 @@ export function useWebRTCPublisher(
     const provider = createProvider(config)
     providerRef.current = provider
 
-    const roomName = config.provider === 'janus' ? `Room ${config.roomId}` : config.serverUrl
+    const roomName =
+      config.provider === 'janus'
+        ? `Room ${config.roomId}`
+        : config.provider === 'direct-rtp'
+          ? `${config.janusHost}:${config.janusPort}`
+          : config.serverUrl
+
+    const serverUrl = config.provider === 'direct-rtp'
+      ? `${config.janusHost}:${config.janusPort}`
+      : config.serverUrl
 
     provider.onStateChange((state) => {
       setStreamStatus({
         connectionState: state,
-        serverUrl: config.serverUrl,
+        serverUrl,
         roomName,
         participantCount: useBroadcasterStore.getState().streamStatus.participantCount,
         uptimeSec: useBroadcasterStore.getState().streamStatus.uptimeSec,

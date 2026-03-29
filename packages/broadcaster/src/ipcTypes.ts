@@ -43,6 +43,16 @@ export type SfuConfig =
       accessKey: string
       displayName?: string
     }
+  | {
+      provider: 'direct-rtp'
+      janusHost: string
+      janusPort: number
+      sampleRate?: number
+      channels?: number
+      frameDurationMs?: number
+      bitrate?: number
+      displayName?: string
+    }
 
 export interface StreamStatus {
   connectionState: SfuConnectionState

@@ -19,6 +19,19 @@ export const broadcasterApi = {
     ): Promise<DecodeAudioResult> =>
       ipcRenderer.invoke('ffmpeg:decodeAudioFile', audioPath, sampleRate, channels),
   },
+  rtp: {
+    start: (config: {
+      host: string
+      port: number
+      sampleRate?: number
+      channels?: number
+      frameDurationMs?: number
+    }): Promise<void> => ipcRenderer.invoke('rtp:start', config),
+    sendFrame: (frame: ArrayBuffer): void => {
+      ipcRenderer.send('rtp:send-frame', frame)
+    },
+    stop: (): Promise<void> => ipcRenderer.invoke('rtp:stop'),
+  },
   menu: {
     onFileOpen: (cb: () => void): (() => void) => {
       const handler = (): void => cb()

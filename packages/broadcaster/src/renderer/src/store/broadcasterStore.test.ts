@@ -132,9 +132,11 @@ describe('broadcasterStore', () => {
 
       const config = useBroadcasterStore.getState().sfuConfig
       expect(config?.provider).toBe('janus')
-      expect(config?.serverUrl).toBe('wss://test.server/janus')
-      expect(config?.roomId).toBe(1234)
-      expect(config?.secret).toBe('mysecret')
+      if (config?.provider === 'janus') {
+        expect(config.serverUrl).toBe('wss://test.server/janus')
+        expect(config.roomId).toBe(1234)
+        expect(config.secret).toBe('mysecret')
+      }
     })
   })
 

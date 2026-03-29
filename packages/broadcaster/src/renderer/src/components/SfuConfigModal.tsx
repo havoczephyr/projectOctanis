@@ -8,7 +8,7 @@ interface SfuConfigModalProps {
   onClose: () => void
 }
 
-type Provider = 'cosmic' | 'janus'
+type Provider = 'cosmic' | 'janus' | 'direct-rtp'
 
 export function SfuConfigModal({ open, onClose }: SfuConfigModalProps): JSX.Element | null {
   const sfuConfig = useBroadcasterStore((s) => s.sfuConfig)
@@ -29,6 +29,10 @@ export function SfuConfigModal({ open, onClose }: SfuConfigModalProps): JSX.Elem
   const [roomId, setRoomId] = useState('')
   const [secret, setSecret] = useState('')
 
+  // Direct RTP fields
+  const [janusHost, setJanusHost] = useState('127.0.0.1')
+  const [janusPort, setJanusPort] = useState('5002')
+
   // Favorites UI state
   const [savingFavorite, setSavingFavorite] = useState(false)
   const [favoriteLabel, setFavoriteLabel] = useState('')
@@ -39,13 +43,17 @@ export function SfuConfigModal({ open, onClose }: SfuConfigModalProps): JSX.Elem
   useEffect(() => {
     if (open && sfuConfig) {
       setProvider(sfuConfig.provider)
-      setServerUrl(sfuConfig.serverUrl)
       setDisplayName(sfuConfig.displayName ?? '')
       if (sfuConfig.provider === 'cosmic') {
+        setServerUrl(sfuConfig.serverUrl)
         setAccessKey(sfuConfig.accessKey)
-      } else {
+      } else if (sfuConfig.provider === 'janus') {
+        setServerUrl(sfuConfig.serverUrl)
         setRoomId(String(sfuConfig.roomId))
         setSecret(sfuConfig.secret ?? '')
+      } else if (sfuConfig.provider === 'direct-rtp') {
+        setJanusHost(sfuConfig.janusHost)
+        setJanusPort(String(sfuConfig.janusPort))
       }
     }
   }, [open, sfuConfig])
@@ -73,7 +81,13 @@ export function SfuConfigModal({ open, onClose }: SfuConfigModalProps): JSX.Elem
 
   const isCosmicValid = serverUrl && /^[0-9a-fA-F]{32}$/.test(accessKey)
   const isJanusValid = serverUrl && roomId && !isNaN(Number(roomId))
-  const canSave = provider === 'cosmic' ? isCosmicValid : isJanusValid
+  const isDirectRtpValid = janusHost.trim() && janusPort && !isNaN(Number(janusPort))
+  const canSave =
+    provider === 'cosmic'
+      ? isCosmicValid
+      : provider === 'janus'
+        ? isJanusValid
+        : isDirectRtpValid
 
   const handleSave = (): void => {
     let config: SfuConfig
@@ -85,13 +99,21 @@ export function SfuConfigModal({ open, onClose }: SfuConfigModalProps): JSX.Elem
         accessKey,
         displayName: displayName || undefined,
       }
-    } else {
+    } else if (provider === 'janus') {
       if (!isJanusValid) return
       config = {
         provider: 'janus',
         serverUrl,
         roomId: Number(roomId),
         secret: secret || undefined,
+        displayName: displayName || undefined,
+      }
+    } else {
+      if (!isDirectRtpValid) return
+      config = {
+        provider: 'direct-rtp',
+        janusHost: janusHost.trim(),
+        janusPort: Number(janusPort),
         displayName: displayName || undefined,
       }
     }
@@ -171,6 +193,9 @@ export function SfuConfigModal({ open, onClose }: SfuConfigModalProps): JSX.Elem
           <button style={toggleStyle(provider === 'janus')} onClick={() => setProvider('janus')}>
             JANUS
           </button>
+          <button style={toggleStyle(provider === 'direct-rtp')} onClick={() => setProvider('direct-rtp')}>
+            DIRECT RTP
+          </button>
         </div>
 
         {/* Favorites list */}
@@ -190,10 +215,15 @@ export function SfuConfigModal({ open, onClose }: SfuConfigModalProps): JSX.Elem
                 <div
                   key={fav.id}
                   onClick={() => {
-                    setServerUrl(fav.serverUrl)
                     if (fav.displayName) setDisplayName(fav.displayName)
-                    if (fav.provider === 'janus' && fav.roomId != null) {
-                      setRoomId(String(fav.roomId))
+                    if (fav.provider === 'direct-rtp') {
+                      if (fav.janusHost) setJanusHost(fav.janusHost)
+                      if (fav.janusPort) setJanusPort(String(fav.janusPort))
+                    } else {
+                      setServerUrl(fav.serverUrl)
+                      if (fav.provider === 'janus' && fav.roomId != null) {
+                        setRoomId(String(fav.roomId))
+                      }
                     }
                   }}
                   style={{
@@ -229,7 +259,9 @@ export function SfuConfigModal({ open, onClose }: SfuConfigModalProps): JSX.Elem
                       fontSize: 9,
                     }}
                   >
-                    {fav.serverUrl}
+                    {fav.provider === 'direct-rtp'
+                      ? `${fav.janusHost}:${fav.janusPort}`
+                      : fav.serverUrl}
                   </span>
                   <button
                     onClick={(e) => {
@@ -256,136 +288,243 @@ export function SfuConfigModal({ open, onClose }: SfuConfigModalProps): JSX.Elem
           </div>
         )}
 
-        {/* Server URL — shared */}
-        <div>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <div style={labelStyle}>SERVER URL</div>
-            {!savingFavorite && (
-              <button
-                onClick={() => {
-                  try {
-                    const hostname = new URL(serverUrl).hostname
-                    setFavoriteLabel(hostname)
-                  } catch {
-                    setFavoriteLabel(serverUrl)
-                  }
-                  setSavingFavorite(true)
-                }}
-                disabled={!serverUrl.trim()}
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  color: serverUrl.trim() ? 'var(--accent-cyan)' : 'var(--text-dim)',
-                  cursor: serverUrl.trim() ? 'pointer' : 'default',
-                  fontSize: 11,
-                  padding: 0,
-                  lineHeight: 1,
-                  opacity: serverUrl.trim() ? 1 : 0.4,
-                }}
-                title="Save to favorites"
-              >
-                ☆ SAVE
-              </button>
-            )}
-          </div>
-          {savingFavorite && (
-            <div style={{ display: 'flex', gap: 4, marginBottom: 4 }}>
-              <input
-                type="text"
-                placeholder="Label"
-                value={favoriteLabel}
-                onChange={(e) => setFavoriteLabel(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && favoriteLabel.trim()) {
-                    addFavorite({
-                      provider,
-                      label: favoriteLabel.trim(),
-                      serverUrl: serverUrl.trim(),
-                      roomId: provider === 'janus' && roomId ? Number(roomId) : undefined,
-                      displayName: displayName || undefined,
-                    })
-                    setSavingFavorite(false)
-                    setFavoriteLabel('')
-                  } else if (e.key === 'Escape') {
-                    setSavingFavorite(false)
-                  }
-                }}
-                style={{ ...inputStyle, flex: 1 }}
-                autoFocus
-              />
-              <button
-                className="btn"
-                onClick={() => {
-                  if (!favoriteLabel.trim()) return
-                  addFavorite({
-                    provider,
-                    label: favoriteLabel.trim(),
-                    serverUrl: serverUrl.trim(),
-                    roomId: provider === 'janus' && roomId ? Number(roomId) : undefined,
-                    displayName: displayName || undefined,
-                  })
-                  setSavingFavorite(false)
-                  setFavoriteLabel('')
-                }}
-                disabled={!favoriteLabel.trim()}
-                style={{ height: 26, fontSize: 9, padding: '0 8px' }}
-              >
-                ★ ADD
-              </button>
-              <button
-                className="btn"
-                onClick={() => setSavingFavorite(false)}
-                style={{ height: 26, fontSize: 9, padding: '0 6px' }}
-              >
-                ✕
-              </button>
-            </div>
-          )}
-          <input
-            type="text"
-            placeholder={provider === 'cosmic' ? 'wss://cosmic.example.com' : 'wss://server/janus'}
-            value={serverUrl}
-            onChange={(e) => setServerUrl(e.target.value)}
-            style={inputStyle}
-            autoFocus={!savingFavorite}
-          />
-        </div>
-
         {/* Provider-specific fields */}
-        {provider === 'cosmic' ? (
-          <div>
-            <div style={labelStyle}>ACCESS KEY</div>
-            <input
-              type="text"
-              placeholder="32-character hex key"
-              value={accessKey}
-              onChange={(e) => setAccessKey(e.target.value)}
-              style={{ ...inputStyle, fontFamily: 'var(--font-mono)', letterSpacing: '0.05em' }}
-              maxLength={32}
-            />
-          </div>
-        ) : (
+        {provider === 'direct-rtp' ? (
           <>
             <div>
-              <div style={labelStyle}>ROOM ID</div>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div style={labelStyle}>JANUS HOST</div>
+                {!savingFavorite && (
+                  <button
+                    onClick={() => {
+                      setFavoriteLabel(`${janusHost}:${janusPort}`)
+                      setSavingFavorite(true)
+                    }}
+                    disabled={!janusHost.trim()}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      color: janusHost.trim() ? 'var(--accent-cyan)' : 'var(--text-dim)',
+                      cursor: janusHost.trim() ? 'pointer' : 'default',
+                      fontSize: 11,
+                      padding: 0,
+                      lineHeight: 1,
+                      opacity: janusHost.trim() ? 1 : 0.4,
+                    }}
+                    title="Save to favorites"
+                  >
+                    ☆ SAVE
+                  </button>
+                )}
+              </div>
+              {savingFavorite && (
+                <div style={{ display: 'flex', gap: 4, marginBottom: 4 }}>
+                  <input
+                    type="text"
+                    placeholder="Label"
+                    value={favoriteLabel}
+                    onChange={(e) => setFavoriteLabel(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && favoriteLabel.trim()) {
+                        addFavorite({
+                          provider: 'direct-rtp',
+                          label: favoriteLabel.trim(),
+                          serverUrl: '',
+                          janusHost: janusHost.trim(),
+                          janusPort: Number(janusPort),
+                          displayName: displayName || undefined,
+                        })
+                        setSavingFavorite(false)
+                        setFavoriteLabel('')
+                      } else if (e.key === 'Escape') {
+                        setSavingFavorite(false)
+                      }
+                    }}
+                    style={{ ...inputStyle, flex: 1 }}
+                    autoFocus
+                  />
+                  <button
+                    className="btn"
+                    onClick={() => {
+                      if (!favoriteLabel.trim()) return
+                      addFavorite({
+                        provider: 'direct-rtp',
+                        label: favoriteLabel.trim(),
+                        serverUrl: '',
+                        janusHost: janusHost.trim(),
+                        janusPort: Number(janusPort),
+                        displayName: displayName || undefined,
+                      })
+                      setSavingFavorite(false)
+                      setFavoriteLabel('')
+                    }}
+                    disabled={!favoriteLabel.trim()}
+                    style={{ height: 26, fontSize: 9, padding: '0 8px' }}
+                  >
+                    ★ ADD
+                  </button>
+                  <button
+                    className="btn"
+                    onClick={() => setSavingFavorite(false)}
+                    style={{ height: 26, fontSize: 9, padding: '0 6px' }}
+                  >
+                    ✕
+                  </button>
+                </div>
+              )}
               <input
-                type="number"
-                placeholder="1234"
-                value={roomId}
-                onChange={(e) => setRoomId(e.target.value)}
+                type="text"
+                placeholder="127.0.0.1"
+                value={janusHost}
+                onChange={(e) => setJanusHost(e.target.value)}
                 style={inputStyle}
+                autoFocus={!savingFavorite}
               />
             </div>
             <div>
-              <div style={labelStyle}>SECRET</div>
+              <div style={labelStyle}>JANUS RTP PORT</div>
               <input
-                type="password"
-                placeholder="Pre-shared secret (optional)"
-                value={secret}
-                onChange={(e) => setSecret(e.target.value)}
+                type="number"
+                placeholder="5002"
+                value={janusPort}
+                onChange={(e) => setJanusPort(e.target.value)}
                 style={inputStyle}
               />
             </div>
+          </>
+        ) : (
+          <>
+            {/* Server URL — shared by Cosmic and Janus */}
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div style={labelStyle}>SERVER URL</div>
+                {!savingFavorite && (
+                  <button
+                    onClick={() => {
+                      try {
+                        const hostname = new URL(serverUrl).hostname
+                        setFavoriteLabel(hostname)
+                      } catch {
+                        setFavoriteLabel(serverUrl)
+                      }
+                      setSavingFavorite(true)
+                    }}
+                    disabled={!serverUrl.trim()}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      color: serverUrl.trim() ? 'var(--accent-cyan)' : 'var(--text-dim)',
+                      cursor: serverUrl.trim() ? 'pointer' : 'default',
+                      fontSize: 11,
+                      padding: 0,
+                      lineHeight: 1,
+                      opacity: serverUrl.trim() ? 1 : 0.4,
+                    }}
+                    title="Save to favorites"
+                  >
+                    ☆ SAVE
+                  </button>
+                )}
+              </div>
+              {savingFavorite && (
+                <div style={{ display: 'flex', gap: 4, marginBottom: 4 }}>
+                  <input
+                    type="text"
+                    placeholder="Label"
+                    value={favoriteLabel}
+                    onChange={(e) => setFavoriteLabel(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && favoriteLabel.trim()) {
+                        addFavorite({
+                          provider,
+                          label: favoriteLabel.trim(),
+                          serverUrl: serverUrl.trim(),
+                          roomId: provider === 'janus' && roomId ? Number(roomId) : undefined,
+                          displayName: displayName || undefined,
+                        })
+                        setSavingFavorite(false)
+                        setFavoriteLabel('')
+                      } else if (e.key === 'Escape') {
+                        setSavingFavorite(false)
+                      }
+                    }}
+                    style={{ ...inputStyle, flex: 1 }}
+                    autoFocus
+                  />
+                  <button
+                    className="btn"
+                    onClick={() => {
+                      if (!favoriteLabel.trim()) return
+                      addFavorite({
+                        provider,
+                        label: favoriteLabel.trim(),
+                        serverUrl: serverUrl.trim(),
+                        roomId: provider === 'janus' && roomId ? Number(roomId) : undefined,
+                        displayName: displayName || undefined,
+                      })
+                      setSavingFavorite(false)
+                      setFavoriteLabel('')
+                    }}
+                    disabled={!favoriteLabel.trim()}
+                    style={{ height: 26, fontSize: 9, padding: '0 8px' }}
+                  >
+                    ★ ADD
+                  </button>
+                  <button
+                    className="btn"
+                    onClick={() => setSavingFavorite(false)}
+                    style={{ height: 26, fontSize: 9, padding: '0 6px' }}
+                  >
+                    ✕
+                  </button>
+                </div>
+              )}
+              <input
+                type="text"
+                placeholder={provider === 'cosmic' ? 'wss://cosmic.example.com' : 'wss://server/janus'}
+                value={serverUrl}
+                onChange={(e) => setServerUrl(e.target.value)}
+                style={inputStyle}
+                autoFocus={!savingFavorite}
+              />
+            </div>
+
+            {provider === 'cosmic' ? (
+              <div>
+                <div style={labelStyle}>ACCESS KEY</div>
+                <input
+                  type="text"
+                  placeholder="32-character hex key"
+                  value={accessKey}
+                  onChange={(e) => setAccessKey(e.target.value)}
+                  style={{ ...inputStyle, fontFamily: 'var(--font-mono)', letterSpacing: '0.05em' }}
+                  maxLength={32}
+                />
+              </div>
+            ) : (
+              <>
+                <div>
+                  <div style={labelStyle}>ROOM ID</div>
+                  <input
+                    type="number"
+                    placeholder="1234"
+                    value={roomId}
+                    onChange={(e) => setRoomId(e.target.value)}
+                    style={inputStyle}
+                  />
+                </div>
+                <div>
+                  <div style={labelStyle}>SECRET</div>
+                  <input
+                    type="password"
+                    placeholder="Pre-shared secret (optional)"
+                    value={secret}
+                    onChange={(e) => setSecret(e.target.value)}
+                    style={inputStyle}
+                  />
+                </div>
+              </>
+            )}
           </>
         )}
 

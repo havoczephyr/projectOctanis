@@ -174,7 +174,9 @@ export function ControlPanel({ onConnect, onDisconnect, onOpenConfig }: ControlP
           )}
           {sfuConfig && !isActive && (
             <div style={{ color: 'var(--text-dim)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              Room {sfuConfig.roomId}
+              {sfuConfig.provider === 'janus' && `Room ${sfuConfig.roomId}`}
+              {sfuConfig.provider === 'direct-rtp' && `${sfuConfig.janusHost}:${sfuConfig.janusPort}`}
+              {sfuConfig.provider === 'cosmic' && sfuConfig.serverUrl}
             </div>
           )}
         </div>
