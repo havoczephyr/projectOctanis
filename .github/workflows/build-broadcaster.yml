@@ -12,9 +12,10 @@ permissions:
 jobs:
   build:
     strategy:
+      fail-fast: false
       matrix:
         include:
-          - os: macos-latest
+          - os: macos-13
             platform: mac
           - os: ubuntu-latest
             platform: linux
@@ -45,6 +46,7 @@ jobs:
       - name: Rebuild native modules for Electron
         working-directory: packages/broadcaster
         run: npm run rebuild:opus
+        continue-on-error: true
 
       - name: Package broadcaster
         working-directory: packages/broadcaster
@@ -62,6 +64,7 @@ jobs:
             packages/broadcaster/dist/*.exe
             packages/broadcaster/dist/*.AppImage
             packages/broadcaster/dist/*.deb
+            packages/broadcaster/dist/*.blockmap
           if-no-files-found: warn
 
   release:
