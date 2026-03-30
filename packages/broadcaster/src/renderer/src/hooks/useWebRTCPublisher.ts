@@ -50,6 +50,7 @@ export function useWebRTCPublisher(
 ): WebRTCPublisherResult {
   const providerRef = useRef<SfuProvider | null>(null)
   const destRef = useRef<MediaStreamAudioDestinationNode | null>(null)
+  const keepAliveRef = useRef<OscillatorNode | null>(null)
   const uptimeRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const connectionState = useBroadcasterStore((s) => s.streamStatus.connectionState)
@@ -75,6 +76,20 @@ export function useWebRTCPublisher(
     const dest = ctx.createMediaStreamDestination()
     masterGainNode.connect(dest)
     destRef.current = dest
+
+    // Keep-alive: connect an inaudible oscillator to the destination.
+    // A ConstantSourceNode(0) is optimized away by Chrome's audio renderer,
+    // causing MediaStreamTrackProcessor to throttle frame delivery to ~5/s
+    // instead of ~100/s. A 1Hz oscillator at -120dBFS is imperceptible but
+    // forces Chrome to actively render the graph every quantum.
+    const keepAlive = ctx.createOscillator()
+    keepAlive.frequency.value = 1
+    const keepAliveGain = ctx.createGain()
+    keepAliveGain.gain.value = 0.000001 // -120 dBFS — below Opus noise floor
+    keepAlive.connect(keepAliveGain)
+    keepAliveGain.connect(dest)
+    keepAlive.start()
+    keepAliveRef.current = keepAlive
 
     const track = dest.stream.getAudioTracks()[0]
     if (!track) {
@@ -135,6 +150,12 @@ export function useWebRTCPublisher(
       await providerRef.current.disconnect()
       providerRef.current.dispose()
       providerRef.current = null
+    }
+
+    if (keepAliveRef.current) {
+      keepAliveRef.current.stop()
+      keepAliveRef.current.disconnect()
+      keepAliveRef.current = null
     }
 
     if (destRef.current) {

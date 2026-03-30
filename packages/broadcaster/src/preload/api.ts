@@ -1,6 +1,6 @@
 import { ipcRenderer } from 'electron'
 import type { OctanisProjectFile } from '@octanis/shared'
-import type { PeakOpts, PeaksResult, DecodeAudioResult } from '../ipcTypes'
+import type { PeakOpts, PeaksResult, DecodeAudioResult, StreamConfig, SfuConnectionState } from '../ipcTypes'
 
 export const broadcasterApi = {
   project: {
@@ -19,25 +19,20 @@ export const broadcasterApi = {
     ): Promise<DecodeAudioResult> =>
       ipcRenderer.invoke('ffmpeg:decodeAudioFile', audioPath, sampleRate, channels),
   },
-  opus: {
-    init: (config: { sampleRate: number; channels: number; bitrate: number }): Promise<void> =>
-      ipcRenderer.invoke('opus:init', config),
-    encode: (pcm: ArrayBuffer): Promise<ArrayBuffer> =>
-      ipcRenderer.invoke('opus:encode', pcm),
-    close: (): Promise<void> => ipcRenderer.invoke('opus:close'),
-  },
-  rtp: {
-    start: (config: {
-      host: string
-      port: number
-      sampleRate?: number
-      channels?: number
-      frameDurationMs?: number
-    }): Promise<void> => ipcRenderer.invoke('rtp:start', config),
-    sendFrame: (frame: ArrayBuffer): void => {
-      ipcRenderer.send('rtp:send-frame', frame)
+  stream: {
+    start: (config: StreamConfig): Promise<void> =>
+      ipcRenderer.invoke('stream:start', config),
+    /** Fire-and-forget: send a complete 20ms PCM frame to the worker. */
+    sendPcm: (pcm: ArrayBuffer): void => {
+      ipcRenderer.send('stream:pcm', pcm)
     },
-    stop: (): Promise<void> => ipcRenderer.invoke('rtp:stop'),
+    stop: (): Promise<void> =>
+      ipcRenderer.invoke('stream:stop'),
+    onStateChange: (cb: (state: SfuConnectionState) => void): (() => void) => {
+      const handler = (_: unknown, state: SfuConnectionState): void => cb(state)
+      ipcRenderer.on('stream:state', handler)
+      return () => { ipcRenderer.removeListener('stream:state', handler) }
+    },
   },
   menu: {
     onFileOpen: (cb: () => void): (() => void) => {

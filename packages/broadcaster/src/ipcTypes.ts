@@ -61,3 +61,20 @@ export interface StreamStatus {
   participantCount: number
   uptimeSec: number
 }
+
+export type StreamConfig =
+  | {
+      mode: 'cosmic'
+      serverUrl: string
+      accessKey: string
+      displayName?: string
+    }
+  | {
+      mode: 'direct-rtp'
+      janusHost: string
+      janusPort: number
+      sampleRate?: number
+      channels?: number
+      frameDurationMs?: number
+      bitrate?: number
+    }
