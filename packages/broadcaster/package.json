@@ -1,6 +1,13 @@
 {
   "name": "@octanis/broadcaster",
   "version": "0.0.11",
+  "description": "Octanis Broadcaster — live audio streaming for Cosmic radio",
+  "author": "havoczephyr <havoczephyr@users.noreply.github.com>",
+  "homepage": "https://github.com/havoczephyr/projectOctanis",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/havoczephyr/projectOctanis.git"
+  },
   "private": true,
   "main": "./out/main/index.js",
   "scripts": {

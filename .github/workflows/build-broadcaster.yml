@@ -34,15 +34,16 @@ jobs:
           node-version: 20
           cache: npm
 
+      - name: Setup Python (node-gyp needs distutils)
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
       - name: Install dependencies
         run: npm ci
 
       - name: Build shared package
         run: npm run build --workspace=packages/shared
-
-      - name: Install Python setuptools (needed by node-gyp)
-        run: pip install setuptools
-        shell: bash
 
       - name: Build broadcaster (electron-vite)
         run: npm run build --workspace=packages/broadcaster

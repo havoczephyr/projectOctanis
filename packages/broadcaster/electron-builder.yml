@@ -34,7 +34,7 @@ asarUnpack:
   - "node_modules/@discordjs/opus/**"
   - "node_modules/ffmpeg-static/**"
 
-npmRebuild: true
+npmRebuild: false
 
 mac:
   category: public.app-category.music
