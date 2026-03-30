@@ -10,6 +10,14 @@ export default defineConfig({
         '@octanis/shared': resolve(__dirname, '../../packages/shared/src/index.ts'),
       },
     },
+    build: {
+      rollupOptions: {
+        input: {
+          index: resolve(__dirname, 'src/main/index.ts'),
+          streamWorker: resolve(__dirname, 'src/main/streamWorker.ts'),
+        },
+      },
+    },
   },
   preload: {
     plugins: [externalizeDepsPlugin({ exclude: ['@octanis/shared'] })],

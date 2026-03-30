@@ -22,10 +22,6 @@ export const broadcasterApi = {
   stream: {
     start: (config: StreamConfig): Promise<void> =>
       ipcRenderer.invoke('stream:start', config),
-    /** Fire-and-forget: send a complete 20ms PCM frame to the worker. */
-    sendPcm: (pcm: ArrayBuffer): void => {
-      ipcRenderer.send('stream:pcm', pcm)
-    },
     stop: (): Promise<void> =>
       ipcRenderer.invoke('stream:stop'),
     onStateChange: (cb: (state: SfuConnectionState) => void): (() => void) => {

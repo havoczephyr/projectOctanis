@@ -68,6 +68,8 @@ export type StreamConfig =
       serverUrl: string
       accessKey: string
       displayName?: string
+      projectPath: string
+      startFromSec?: number
     }
   | {
       mode: 'direct-rtp'
@@ -77,4 +79,6 @@ export type StreamConfig =
       channels?: number
       frameDurationMs?: number
       bitrate?: number
+      projectPath: string
+      startFromSec?: number
     }

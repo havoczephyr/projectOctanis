@@ -8,45 +8,28 @@ interface DirectRtpConfig {
   channels?: number
   frameDurationMs?: number
   bitrate?: number
-  masterGainNode: GainNode
+  projectPath: string
+  startFromSec?: number
 }
 
 type StateCallback = (state: SfuConnectionState) => void
 type CountCallback = (count: number) => void
 
-const SAMPLE_RATE = 48_000
-const CHANNELS = 2
-const FRAME_DURATION_MS = 20
-const SAMPLES_PER_FRAME = (SAMPLE_RATE * FRAME_DURATION_MS) / 1000 // 960
-const PCM_FRAME_SAMPLES = SAMPLES_PER_FRAME * CHANNELS // 1920 interleaved samples
-
 /**
  * Direct RTP streaming provider.
  *
- * Uses a ScriptProcessorNode to capture PCM directly from the audio
- * rendering thread, bypassing MediaStreamTrackProcessor.
+ * The main process handles everything: FFmpeg mix → Opus encode → UDP/RTP.
+ * This provider just tells the main process to start/stop.
  */
 export class DirectRtpProvider implements SfuProvider {
   readonly name = 'direct-rtp'
 
   private config: DirectRtpConfig
-  private scriptNode: ScriptProcessorNode | null = null
   private state: SfuConnectionState = 'disconnected'
   private stateCallbacks: StateCallback[] = []
   private countCallbacks: CountCallback[] = []
   private disposed = false
   private stateUnsub: (() => void) | null = null
-
-  // PCM accumulation
-  private pcmAccumulator = new Int16Array(PCM_FRAME_SAMPLES * 2)
-  private pcmOffset = 0
-
-  // Diagnostics
-  private callbackCount = 0
-  private pcmFramesSent = 0
-  private totalSamples = 0
-  private diagStartTime = 0
-  private lastDiagTime = 0
 
   constructor(config: DirectRtpConfig) {
     this.config = config
@@ -79,9 +62,10 @@ export class DirectRtpProvider implements SfuProvider {
         channels: this.config.channels,
         frameDurationMs: this.config.frameDurationMs,
         bitrate: this.config.bitrate,
+        projectPath: this.config.projectPath,
+        startFromSec: this.config.startFromSec,
       })
 
-      this.startCapture()
       console.log('[DirectRTP] Connected and streaming')
     } catch (err) {
       console.error('[DirectRTP] Connection failed:', err)
@@ -114,81 +98,7 @@ export class DirectRtpProvider implements SfuProvider {
     for (const cb of this.stateCallbacks) cb(state)
   }
 
-  private startCapture(): void {
-    const ctx = this.config.masterGainNode.context as AudioContext
-    this.scriptNode = ctx.createScriptProcessor(256, CHANNELS, CHANNELS)
-
-    this.diagStartTime = performance.now()
-    this.lastDiagTime = this.diagStartTime
-
-    this.scriptNode.onaudioprocess = (event: AudioProcessingEvent) => {
-      this.callbackCount++
-      const inputBuffer = event.inputBuffer
-      const numFrames = inputBuffer.length
-      this.totalSamples += numFrames
-
-      const left = inputBuffer.getChannelData(0)
-      const right = inputBuffer.getChannelData(1)
-
-      for (let i = 0; i < numFrames; i++) {
-        const l = Math.max(-1, Math.min(1, left[i]))
-        const r = Math.max(-1, Math.min(1, right[i]))
-        this.pcmAccumulator[this.pcmOffset++] = l < 0 ? l * 0x8000 : l * 0x7fff
-        this.pcmAccumulator[this.pcmOffset++] = r < 0 ? r * 0x8000 : r * 0x7fff
-
-        if (this.pcmOffset >= PCM_FRAME_SAMPLES) {
-          const frame = this.pcmAccumulator.slice(0, PCM_FRAME_SAMPLES)
-          window.octanis.stream.sendPcm(frame.buffer)
-          this.pcmFramesSent++
-
-          const remainder = this.pcmOffset - PCM_FRAME_SAMPLES
-          if (remainder > 0) {
-            this.pcmAccumulator.copyWithin(0, PCM_FRAME_SAMPLES, this.pcmOffset)
-          }
-          this.pcmOffset = remainder
-        }
-      }
-
-      const now = performance.now()
-      if (now - this.lastDiagTime >= 5000) {
-        const elapsedSec = (now - this.diagStartTime) / 1000
-        const audioSec = this.totalSamples / SAMPLE_RATE
-        const cbRate = this.callbackCount / elapsedSec
-        console.log(
-          `[DirectRTP][DIAG] callbacks=${this.callbackCount} pcmSent=${this.pcmFramesSent}` +
-          ` totalAudioSec=${audioSec.toFixed(1)} cbRate=${cbRate.toFixed(0)}/s` +
-          ` ratio=${(audioSec / elapsedSec).toFixed(2)}`
-        )
-        this.lastDiagTime = now
-      }
-    }
-
-    this.config.masterGainNode.connect(this.scriptNode)
-    this.scriptNode.connect(ctx.destination)
-
-    console.log('[DirectRTP] ScriptProcessorNode capture started (256-sample buffer)')
-  }
-
   private cleanup(): void {
-    const elapsedSec = (performance.now() - this.diagStartTime) / 1000
-    const audioSec = this.totalSamples / SAMPLE_RATE
-    console.log(
-      `[DirectRTP] Cleanup — ${this.callbackCount} callbacks, ${this.pcmFramesSent} frames,` +
-      ` ${audioSec.toFixed(1)}s audio in ${elapsedSec.toFixed(1)}s wall` +
-      ` (ratio=${elapsedSec > 0 ? (audioSec / elapsedSec).toFixed(2) : '0'})`
-    )
-
-    if (this.scriptNode) {
-      this.scriptNode.onaudioprocess = null
-      this.scriptNode.disconnect()
-      this.scriptNode = null
-    }
-
-    this.pcmOffset = 0
-    this.callbackCount = 0
-    this.pcmFramesSent = 0
-    this.totalSamples = 0
-
     if (this.stateUnsub) {
       this.stateUnsub()
       this.stateUnsub = null

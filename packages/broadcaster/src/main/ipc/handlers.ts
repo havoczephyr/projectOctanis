@@ -1,11 +1,9 @@
 import { registerProjectHandlers } from './project'
 import { registerFfmpegHandlers } from './ffmpeg'
-import { registerRtpHandlers } from './rtp'
-import { registerOpusHandlers } from './opus'
+import { registerStreamHandlers } from './stream'
 
 export function registerIpcHandlers(): void {
   registerProjectHandlers()
   registerFfmpegHandlers()
-  registerRtpHandlers()
-  registerOpusHandlers()
+  registerStreamHandlers()
 }

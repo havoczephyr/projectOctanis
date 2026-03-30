@@ -6,7 +6,7 @@ import { JanusProvider } from '../sfu/JanusProvider'
 import { CosmicProvider } from '../sfu/CosmicProvider'
 import { DirectRtpProvider } from '../sfu/DirectRtpProvider'
 
-function createProvider(config: SfuConfig, masterGainNode?: GainNode): SfuProvider {
+function createProvider(config: SfuConfig, projectPath: string, startFromSec: number): SfuProvider {
   switch (config.provider) {
     case 'janus':
       return new JanusProvider({
@@ -20,7 +20,8 @@ function createProvider(config: SfuConfig, masterGainNode?: GainNode): SfuProvid
         serverUrl: config.serverUrl,
         accessKey: config.accessKey,
         displayName: config.displayName,
-        masterGainNode: masterGainNode!,
+        projectPath,
+        startFromSec,
       })
     case 'direct-rtp':
       return new DirectRtpProvider({
@@ -30,7 +31,8 @@ function createProvider(config: SfuConfig, masterGainNode?: GainNode): SfuProvid
         channels: config.channels,
         frameDurationMs: config.frameDurationMs,
         bitrate: config.bitrate,
-        masterGainNode: masterGainNode!,
+        projectPath,
+        startFromSec,
       })
     default:
       throw new Error(`Unknown SFU provider: ${(config as { provider: string }).provider}`)
@@ -44,11 +46,10 @@ export interface WebRTCPublisherResult {
 }
 
 /**
- * Captures the final audio mix from masterGainNode and publishes it
- * to an SFU server via the configured provider.
+ * Publishes the project audio mix to an SFU server.
  *
  * - Janus: MediaStreamDestination → MediaStreamTrack → RTCPeerConnection
- * - Cosmic/DirectRTP: ScriptProcessorNode → PCM capture → IPC → Worker
+ * - Cosmic/DirectRTP: Main process renders FFmpeg mix → Opus → Network
  */
 export function useWebRTCPublisher(
   masterGainNode: GainNode | undefined
@@ -75,8 +76,14 @@ export function useWebRTCPublisher(
       destRef.current = null
     }
 
+    // Get project path and playhead position from store
+    const { currentFilePath, playheadSec } = useBroadcasterStore.getState()
+    if (!currentFilePath) {
+      throw new Error('No project loaded — open a project before streaming')
+    }
+
     const ctx = masterGainNode.context as AudioContext
-    const provider = createProvider(config, masterGainNode)
+    const provider = createProvider(config, currentFilePath, playheadSec)
     providerRef.current = provider
 
     const roomName =
@@ -106,7 +113,7 @@ export function useWebRTCPublisher(
     })
 
     // Janus needs a MediaStreamTrack for WebRTC.
-    // Cosmic/DirectRTP use ScriptProcessorNode internally — no track needed.
+    // Cosmic/DirectRTP use FFmpeg mix in main process — no track needed.
     if (config.provider === 'janus') {
       const dest = ctx.createMediaStreamDestination()
       masterGainNode.connect(dest)
@@ -116,7 +123,6 @@ export function useWebRTCPublisher(
       if (!track) throw new Error('No audio track from MediaStreamDestination')
       await provider.connect(track)
     } else {
-      // Cosmic/DirectRTP: pass a dummy track — providers use ScriptProcessorNode
       await provider.connect(null as unknown as MediaStreamTrack)
     }
 
