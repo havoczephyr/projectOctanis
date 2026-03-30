@@ -8,6 +8,8 @@
     "dev": "electron-vite dev",
     "build": "tsc --noEmit && electron-vite build",
     "preview": "electron-vite preview",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
