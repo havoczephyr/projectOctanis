@@ -13,7 +13,8 @@
     "build:shared": "npm run build --workspace=packages/shared",
     "test": "vitest run",
     "lint": "eslint packages/*/src --ext .ts,.tsx",
-    "diag:cosmic": "node diagnosticTools/cosmic-diag.mjs"
+    "diag:cosmic": "node diagnosticTools/cosmic-diag.mjs",
+    "headless:stream": "node diagnosticTools/headless-stream.mjs"
   },
   "devDependencies": {
     "electron": "^41.0.3",
