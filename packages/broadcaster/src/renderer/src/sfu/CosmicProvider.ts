@@ -5,6 +5,7 @@ interface CosmicConfig {
   serverUrl: string
   accessKey: string
   displayName?: string
+  masterGainNode: GainNode
 }
 
 type StateCallback = (state: SfuConnectionState) => void
@@ -19,26 +20,35 @@ const PCM_FRAME_SAMPLES = SAMPLES_PER_FRAME * CHANNELS // 1920 interleaved sampl
 /**
  * Cosmic DJ streaming provider.
  *
- * Reads audio from a MediaStreamTrack, converts f32-planar to s16le
- * interleaved 20ms frames, and fire-and-forgets each frame to the main
- * process via IPC. A dedicated Worker Thread handles Opus encoding and
- * WebSocket transport on a drift-corrected 20ms tick.
+ * Uses a ScriptProcessorNode to capture PCM directly from the audio
+ * rendering thread. This bypasses MediaStreamTrackProcessor, which
+ * throttles frame delivery to ~5/s when no audio sources are active
+ * (a Chromium optimization that starves the Opus pipeline).
+ *
+ * ScriptProcessorNode.onaudioprocess fires every rendering quantum
+ * regardless of signal content — exactly the reliability we need.
  */
 export class CosmicProvider implements SfuProvider {
   readonly name = 'cosmic'
 
   private config: CosmicConfig
-  private processorReader: ReadableStreamDefaultReader<AudioData> | null = null
+  private scriptNode: ScriptProcessorNode | null = null
   private state: SfuConnectionState = 'disconnected'
   private stateCallbacks: StateCallback[] = []
   private countCallbacks: CountCallback[] = []
   private disposed = false
-  private readLoopRunning = false
   private stateUnsub: (() => void) | null = null
 
   // PCM accumulation — send complete 20ms frames over IPC
   private pcmAccumulator = new Int16Array(PCM_FRAME_SAMPLES * 2)
   private pcmOffset = 0
+
+  // Diagnostics
+  private callbackCount = 0
+  private pcmFramesSent = 0
+  private totalSamples = 0
+  private diagStartTime = 0
+  private lastDiagTime = 0
 
   constructor(config: CosmicConfig) {
     this.config = config
@@ -52,7 +62,7 @@ export class CosmicProvider implements SfuProvider {
     this.countCallbacks.push(cb)
   }
 
-  async connect(track: MediaStreamTrack): Promise<void> {
+  async connect(_track: MediaStreamTrack): Promise<void> {
     if (this.disposed) throw new Error('Provider disposed')
 
     console.log(`[Cosmic] Connecting to ${this.config.serverUrl}`)
@@ -70,7 +80,7 @@ export class CosmicProvider implements SfuProvider {
         displayName: this.config.displayName,
       })
 
-      this.startReading(track)
+      this.startCapture()
       console.log('[Cosmic] Connected and streaming')
     } catch (err) {
       console.error('[Cosmic] Connection failed:', err)
@@ -103,132 +113,94 @@ export class CosmicProvider implements SfuProvider {
     for (const cb of this.stateCallbacks) cb(state)
   }
 
-  private startReading(track: MediaStreamTrack): void {
-    // Monitor track state for debugging pipeline stalls
-    console.log(
-      `[Cosmic] Track state: readyState=${track.readyState} muted=${track.muted} enabled=${track.enabled}`
-    )
-    track.addEventListener('mute', () => console.warn('[Cosmic] Track MUTED'))
-    track.addEventListener('unmute', () => console.log('[Cosmic] Track UNMUTED'))
-    track.addEventListener('ended', () => console.warn('[Cosmic] Track ENDED'))
+  private startCapture(): void {
+    const ctx = this.config.masterGainNode.context as AudioContext
 
-    // Buffer up to 10 frames (~100ms) to prevent drops when the main thread
-    // is briefly busy (React renders, IPC serialization, GC pauses).
-    // Default maxBufferSize of 1 causes ~37% frame loss during active playback.
-    const processor = new MediaStreamTrackProcessor({ track, maxBufferSize: 10 })
-    this.processorReader = processor.readable.getReader()
-    this.readLoopRunning = true
-    this.readLoop()
-  }
+    // ScriptProcessorNode with 256-sample buffer (5.33ms) for fine-grained
+    // capture. The callback fires on every audio rendering quantum regardless
+    // of signal content — no throttling like MediaStreamTrackProcessor.
+    this.scriptNode = ctx.createScriptProcessor(256, CHANNELS, CHANNELS)
 
-  private async readLoop(): Promise<void> {
-    const reader = this.processorReader
-    if (!reader) return
+    this.diagStartTime = performance.now()
+    this.lastDiagTime = this.diagStartTime
 
-    let chunkCount = 0
-    let pcmFramesSent = 0
-    let totalSamples = 0
-    let lastLogTime = performance.now()
-    let lastChunkTime = performance.now()
-    let maxGapMs = 0
+    this.scriptNode.onaudioprocess = (event: AudioProcessingEvent) => {
+      this.callbackCount++
+      const inputBuffer = event.inputBuffer
+      const numFrames = inputBuffer.length
+      this.totalSamples += numFrames
 
-    try {
-      while (this.readLoopRunning && !this.disposed) {
-        const { value: audioData, done } = await reader.read()
-        if (done || !audioData) {
-          console.warn(`[Cosmic] Reader returned done=${done} audioData=${!!audioData}`)
-          break
-        }
+      const left = inputBuffer.getChannelData(0)
+      const right = inputBuffer.getChannelData(1)
 
-        const now = performance.now()
-        const gap = now - lastChunkTime
-        if (gap > maxGapMs) maxGapMs = gap
-        lastChunkTime = now
+      // Interleave stereo f32 → s16le, accumulate 20ms frames
+      for (let i = 0; i < numFrames; i++) {
+        const l = Math.max(-1, Math.min(1, left[i]))
+        const r = Math.max(-1, Math.min(1, right[i]))
+        this.pcmAccumulator[this.pcmOffset++] = l < 0 ? l * 0x8000 : l * 0x7fff
+        this.pcmAccumulator[this.pcmOffset++] = r < 0 ? r * 0x8000 : r * 0x7fff
 
-        if (chunkCount < 3) {
-          console.log(
-            `[Cosmic] AudioData #${chunkCount}:`,
-            `format=${audioData.format}`,
-            `sampleRate=${audioData.sampleRate}`,
-            `channels=${audioData.numberOfChannels}`,
-            `frames=${audioData.numberOfFrames}`
-          )
-        }
-        chunkCount++
+        if (this.pcmOffset >= PCM_FRAME_SAMPLES) {
+          const frame = this.pcmAccumulator.slice(0, PCM_FRAME_SAMPLES)
+          window.octanis.stream.sendPcm(frame.buffer)
+          this.pcmFramesSent++
 
-        const numFrames = audioData.numberOfFrames
-        const numChannels = audioData.numberOfChannels
-        totalSamples += numFrames
-
-        // Extract planar f32 data per channel
-        const planes: Float32Array[] = []
-        for (let ch = 0; ch < numChannels; ch++) {
-          const plane = new Float32Array(numFrames)
-          audioData.copyTo(plane, { planeIndex: ch })
-          planes.push(plane)
-        }
-        audioData.close()
-
-        // Interleave f32-planar → s16le, accumulate, send complete 20ms frames
-        for (let i = 0; i < numFrames; i++) {
-          for (let ch = 0; ch < numChannels; ch++) {
-            const sample = Math.max(-1, Math.min(1, planes[ch][i]))
-            this.pcmAccumulator[this.pcmOffset++] =
-              sample < 0 ? sample * 0x8000 : sample * 0x7fff
+          const remainder = this.pcmOffset - PCM_FRAME_SAMPLES
+          if (remainder > 0) {
+            this.pcmAccumulator.copyWithin(0, PCM_FRAME_SAMPLES, this.pcmOffset)
           }
-
-          if (this.pcmOffset >= PCM_FRAME_SAMPLES) {
-            const frame = this.pcmAccumulator.slice(0, PCM_FRAME_SAMPLES)
-            window.octanis.stream.sendPcm(frame.buffer)
-            pcmFramesSent++
-
-            const remainder = this.pcmOffset - PCM_FRAME_SAMPLES
-            if (remainder > 0) {
-              this.pcmAccumulator.copyWithin(0, PCM_FRAME_SAMPLES, this.pcmOffset)
-            }
-            this.pcmOffset = remainder
-          }
-        }
-
-        // Pipeline diagnostic: log every 5 seconds
-        if (now - lastLogTime >= 5000) {
-          const elapsedSec = (now - lastLogTime) / 1000
-          const audioSec = totalSamples / SAMPLE_RATE
-          console.log(
-            `[Cosmic][DIAG] chunks=${chunkCount} pcmSent=${pcmFramesSent}` +
-            ` totalAudioSec=${audioSec.toFixed(1)}` +
-            ` chunkRate=${(chunkCount / ((now - lastLogTime + (chunkCount > 1 ? 0 : 5000)) / 1000)).toFixed(0)}/s` +
-            ` maxGap=${maxGapMs.toFixed(0)}ms` +
-            ` accumOffset=${this.pcmOffset}`
-          )
-          lastLogTime = now
-          maxGapMs = 0
+          this.pcmOffset = remainder
         }
       }
-    } catch (err) {
-      if (this.readLoopRunning) {
-        console.error('[Cosmic] Read loop error:', err)
+
+      // Diagnostic log every 5 seconds
+      const now = performance.now()
+      if (now - this.lastDiagTime >= 5000) {
+        const elapsedSec = (now - this.diagStartTime) / 1000
+        const audioSec = this.totalSamples / SAMPLE_RATE
+        const cbRate = this.callbackCount / elapsedSec
+        console.log(
+          `[Cosmic][DIAG] callbacks=${this.callbackCount} pcmSent=${this.pcmFramesSent}` +
+          ` totalAudioSec=${audioSec.toFixed(1)} cbRate=${cbRate.toFixed(0)}/s` +
+          ` ratio=${(audioSec / elapsedSec).toFixed(2)}`
+        )
+        this.lastDiagTime = now
       }
     }
-    console.log(
-      `[Cosmic] Read loop ended: ${chunkCount} chunks, ${pcmFramesSent} frames sent,` +
-      ` ${(totalSamples / SAMPLE_RATE).toFixed(1)}s audio`
-    )
+
+    // Connect: masterGainNode → scriptNode → destination
+    // The scriptNode passes input through to output, but at negligible level
+    // since we don't modify the output buffer. It must connect to destination
+    // for onaudioprocess to fire.
+    this.config.masterGainNode.connect(this.scriptNode)
+    this.scriptNode.connect(ctx.destination)
+
+    console.log('[Cosmic] ScriptProcessorNode capture started (256-sample buffer)')
   }
 
   private cleanup(): void {
-    console.log('[Cosmic] Cleanup')
-    this.readLoopRunning = false
+    const elapsedSec = (performance.now() - this.diagStartTime) / 1000
+    const audioSec = this.totalSamples / SAMPLE_RATE
+    console.log(
+      `[Cosmic] Cleanup — ${this.callbackCount} callbacks, ${this.pcmFramesSent} frames,` +
+      ` ${audioSec.toFixed(1)}s audio in ${elapsedSec.toFixed(1)}s wall` +
+      ` (ratio=${elapsedSec > 0 ? (audioSec / elapsedSec).toFixed(2) : '0'})`
+    )
+
+    if (this.scriptNode) {
+      this.scriptNode.onaudioprocess = null
+      this.scriptNode.disconnect()
+      this.scriptNode = null
+    }
+
     this.pcmOffset = 0
+    this.callbackCount = 0
+    this.pcmFramesSent = 0
+    this.totalSamples = 0
 
     if (this.stateUnsub) {
       this.stateUnsub()
       this.stateUnsub = null
-    }
-
-    if (this.processorReader) {
-      this.processorReader.cancel().catch(() => {})
-      this.processorReader = null
     }
   }
 }

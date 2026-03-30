@@ -6,7 +6,7 @@ import { JanusProvider } from '../sfu/JanusProvider'
 import { CosmicProvider } from '../sfu/CosmicProvider'
 import { DirectRtpProvider } from '../sfu/DirectRtpProvider'
 
-function createProvider(config: SfuConfig): SfuProvider {
+function createProvider(config: SfuConfig, masterGainNode?: GainNode): SfuProvider {
   switch (config.provider) {
     case 'janus':
       return new JanusProvider({
@@ -20,6 +20,7 @@ function createProvider(config: SfuConfig): SfuProvider {
         serverUrl: config.serverUrl,
         accessKey: config.accessKey,
         displayName: config.displayName,
+        masterGainNode: masterGainNode!,
       })
     case 'direct-rtp':
       return new DirectRtpProvider({
@@ -29,6 +30,7 @@ function createProvider(config: SfuConfig): SfuProvider {
         channels: config.channels,
         frameDurationMs: config.frameDurationMs,
         bitrate: config.bitrate,
+        masterGainNode: masterGainNode!,
       })
     default:
       throw new Error(`Unknown SFU provider: ${(config as { provider: string }).provider}`)
@@ -42,15 +44,17 @@ export interface WebRTCPublisherResult {
 }
 
 /**
- * Captures the final audio mix from masterGainNode via MediaStreamDestination
- * and publishes it to an SFU server via the configured provider.
+ * Captures the final audio mix from masterGainNode and publishes it
+ * to an SFU server via the configured provider.
+ *
+ * - Janus: MediaStreamDestination → MediaStreamTrack → RTCPeerConnection
+ * - Cosmic/DirectRTP: ScriptProcessorNode → PCM capture → IPC → Worker
  */
 export function useWebRTCPublisher(
   masterGainNode: GainNode | undefined
 ): WebRTCPublisherResult {
   const providerRef = useRef<SfuProvider | null>(null)
   const destRef = useRef<MediaStreamAudioDestinationNode | null>(null)
-  const keepAliveRef = useRef<OscillatorNode | null>(null)
   const uptimeRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const connectionState = useBroadcasterStore((s) => s.streamStatus.connectionState)
@@ -71,33 +75,8 @@ export function useWebRTCPublisher(
       destRef.current = null
     }
 
-    // Create MediaStreamDestination to capture the full mix
     const ctx = masterGainNode.context as AudioContext
-    const dest = ctx.createMediaStreamDestination()
-    masterGainNode.connect(dest)
-    destRef.current = dest
-
-    // Keep-alive: connect an inaudible oscillator to the destination.
-    // A ConstantSourceNode(0) is optimized away by Chrome's audio renderer,
-    // causing MediaStreamTrackProcessor to throttle frame delivery to ~5/s
-    // instead of ~100/s. A 1Hz oscillator at -120dBFS is imperceptible but
-    // forces Chrome to actively render the graph every quantum.
-    const keepAlive = ctx.createOscillator()
-    keepAlive.frequency.value = 1
-    const keepAliveGain = ctx.createGain()
-    keepAliveGain.gain.value = 0.000001 // -120 dBFS — below Opus noise floor
-    keepAlive.connect(keepAliveGain)
-    keepAliveGain.connect(dest)
-    keepAlive.start()
-    keepAliveRef.current = keepAlive
-
-    const track = dest.stream.getAudioTracks()[0]
-    if (!track) {
-      throw new Error('No audio track from MediaStreamDestination')
-    }
-
-    // Create and configure the SFU provider
-    const provider = createProvider(config)
+    const provider = createProvider(config, masterGainNode)
     providerRef.current = provider
 
     const roomName =
@@ -126,8 +105,20 @@ export function useWebRTCPublisher(
       setStreamStatus({ ...current, participantCount: count })
     })
 
-    // Connect to the SFU
-    await provider.connect(track)
+    // Janus needs a MediaStreamTrack for WebRTC.
+    // Cosmic/DirectRTP use ScriptProcessorNode internally — no track needed.
+    if (config.provider === 'janus') {
+      const dest = ctx.createMediaStreamDestination()
+      masterGainNode.connect(dest)
+      destRef.current = dest
+
+      const track = dest.stream.getAudioTracks()[0]
+      if (!track) throw new Error('No audio track from MediaStreamDestination')
+      await provider.connect(track)
+    } else {
+      // Cosmic/DirectRTP: pass a dummy track — providers use ScriptProcessorNode
+      await provider.connect(null as unknown as MediaStreamTrack)
+    }
 
     // Start uptime counter
     const startTime = Date.now()
@@ -150,12 +141,6 @@ export function useWebRTCPublisher(
       await providerRef.current.disconnect()
       providerRef.current.dispose()
       providerRef.current = null
-    }
-
-    if (keepAliveRef.current) {
-      keepAliveRef.current.stop()
-      keepAliveRef.current.disconnect()
-      keepAliveRef.current = null
     }
 
     if (destRef.current) {
