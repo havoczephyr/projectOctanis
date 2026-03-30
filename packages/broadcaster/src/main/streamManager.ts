@@ -9,6 +9,7 @@
 
 import { Worker } from 'node:worker_threads'
 import { join } from 'node:path'
+import { performance } from 'node:perf_hooks'
 import type { Readable } from 'node:stream'
 import type { WebContents } from 'electron'
 import type { StreamConfig } from '../ipcTypes'
@@ -23,6 +24,7 @@ const PCM_FRAME_BYTES = SAMPLES_PER_FRAME * CHANNELS * 2 // 3840
 
 const QUEUE_HIGH_WATER = 40
 const QUEUE_LOW_WATER = 10
+const PREFILL_FRAMES = 5 // 100ms buffer before starting real-time tick
 
 export class StreamManager {
   private worker: Worker | null = null
@@ -32,7 +34,12 @@ export class StreamManager {
   private streamPaused = false
   private streamDone = false
   private pcmAccum = Buffer.alloc(0)
-  private feedTimer: ReturnType<typeof setTimeout> | null = null
+  private tickTimer: ReturnType<typeof setTimeout> | null = null
+  private tickStartTime = 0
+  private frameIndex = 0
+  private primed = false
+  private tickCount = 0
+  private silenceCount = 0
 
   async start(config: StreamConfig, webContents: WebContents): Promise<void> {
     this.stop()
@@ -142,18 +149,63 @@ export class StreamManager {
     })
   }
 
-  /** Feed queued PCM frames to the worker at the rate it consumes them. */
+  /**
+   * Feed PCM frames to the worker on a drift-corrected 20ms tick —
+   * one frame per tick, matching real-time playback pace.
+   * Mirrors the headless broadcaster's proven single-process pattern.
+   */
   private startFeeding(): void {
-    const feed = (): void => {
+    this.primed = false
+    this.frameIndex = 0
+    this.tickCount = 0
+    this.silenceCount = 0
+
+    const tick = (): void => {
       if (!this.worker) return
 
-      // Send up to 5 frames per tick to keep the worker's internal queue fed
-      let sent = 0
-      while (this.frameQueue.length > 0 && sent < 5) {
+      // Wait for enough frames to absorb startup jitter
+      if (!this.primed) {
+        if (this.frameQueue.length >= PREFILL_FRAMES) {
+          this.primed = true
+          this.tickStartTime = performance.now()
+          this.frameIndex = 0
+          console.log(
+            `[StreamManager] Primed — ${this.frameQueue.length} frames queued, starting real-time feed`
+          )
+        } else if (this.streamDone && this.frameQueue.length === 0) {
+          this.worker.postMessage({ type: 'eof' })
+          console.log('[StreamManager] Stream ended before priming — sent eof')
+          return
+        } else {
+          this.tickTimer = setTimeout(tick, 5)
+          return
+        }
+      }
+
+      this.tickCount++
+
+      // Dequeue one frame and send to worker for immediate encode+send
+      if (this.frameQueue.length > 0) {
         const frame = this.frameQueue.shift()!
-        const ab = frame.buffer.slice(frame.byteOffset, frame.byteOffset + frame.byteLength) as ArrayBuffer
+        const ab = frame.buffer.slice(
+          frame.byteOffset,
+          frame.byteOffset + frame.byteLength
+        ) as ArrayBuffer
         this.worker.postMessage({ type: 'pcm', buffer: ab }, [ab])
-        sent++
+      } else if (this.streamDone) {
+        // Mix finished and queue drained — signal worker to close
+        this.worker.postMessage({ type: 'eof' })
+        const audioSec = (this.tickCount * FRAME_DURATION_MS) / 1000
+        const wallSec = (performance.now() - this.tickStartTime) / 1000
+        console.log(
+          `[StreamManager] All frames sent — ${this.tickCount} ticks, ` +
+            `${this.silenceCount} silence, audio=${audioSec.toFixed(1)}s wall=${wallSec.toFixed(1)}s`
+        )
+        return
+      } else {
+        // Queue starved but stream not done — worker will receive nothing this tick
+        // (worker handles the gap; no silence injection needed here)
+        this.silenceCount++
       }
 
       // Resume FFmpeg if queue drained below low-water mark
@@ -162,22 +214,32 @@ export class StreamManager {
         this.streamPaused = false
       }
 
-      // Stop when mix is done and queue is empty
-      if (this.streamDone && this.frameQueue.length === 0) {
-        console.log('[StreamManager] All frames fed to worker')
-        return
+      // ── Real-time monitoring (every 250 ticks ≈ 5s) ──
+      if (this.tickCount % 250 === 0) {
+        const wallSec = (performance.now() - this.tickStartTime) / 1000
+        const audioSec = (this.tickCount * FRAME_DURATION_MS) / 1000
+        const drift = audioSec - wallSec
+        console.log(
+          `[StreamManager] tick=${this.tickCount} queued=${this.frameQueue.length} ` +
+            `silence=${this.silenceCount} audio=${audioSec.toFixed(1)}s ` +
+            `wall=${wallSec.toFixed(1)}s drift=${(drift * 1000).toFixed(1)}ms`
+        )
       }
 
-      this.feedTimer = setTimeout(feed, 4) // ~250 checks/sec, faster than 50fps consume rate
+      // Drift-corrected next tick
+      this.frameIndex++
+      const nextAt = this.tickStartTime + this.frameIndex * FRAME_DURATION_MS
+      const delay = Math.max(0, nextAt - performance.now())
+      this.tickTimer = setTimeout(tick, delay)
     }
 
-    feed()
+    tick()
   }
 
   stop(): void {
-    if (this.feedTimer) {
-      clearTimeout(this.feedTimer)
-      this.feedTimer = null
+    if (this.tickTimer) {
+      clearTimeout(this.tickTimer)
+      this.tickTimer = null
     }
 
     if (this.pcmStream) {

@@ -296,6 +296,13 @@ async function main() {
   const QUEUE_HIGH_WATER = 40  // pause FFmpeg
   const QUEUE_LOW_WATER = 10   // resume FFmpeg
 
+  // ── Send-side monitoring state ──
+  let lastTickAt = 0
+  let minIfi = Infinity, maxIfi = 0, ifiSum = 0
+  let minQueue = Infinity, maxQueue = 0, queueSum = 0
+  let pauseCount = 0
+  let windowEncodes = 0
+
   // Accumulate PCM into exact 20ms frames
   let pcmAccum = Buffer.alloc(0)
 
@@ -312,6 +319,7 @@ async function main() {
     if (!streamPaused && frameQueue.length >= QUEUE_HIGH_WATER) {
       pcmStream.pause()
       streamPaused = true
+      pauseCount++
     }
   })
 
@@ -377,13 +385,41 @@ async function main() {
       sendOpus(silenceFrame)
     }
 
+    // ── Per-tick monitoring ──
+    const now = performance.now()
+    if (lastTickAt > 0) {
+      const ifi = now - lastTickAt
+      if (ifi < minIfi) minIfi = ifi
+      if (ifi > maxIfi) maxIfi = ifi
+      ifiSum += ifi
+    }
+    lastTickAt = now
+    const q = frameQueue.length
+    if (q < minQueue) minQueue = q
+    if (q > maxQueue) maxQueue = q
+    queueSum += q
+    windowEncodes++
+
     if (tickCount % 250 === 0) {
-      const elapsedSec = (performance.now() - tickStartTime) / 1000
+      const elapsedSec = (now - tickStartTime) / 1000
       const audioSec = (encodeCount + silenceCount) * FRAME_DURATION_MS / 1000
+      const drift = audioSec - elapsedSec
+      const avgIfi = windowEncodes > 1 ? (ifiSum / (windowEncodes - 1)).toFixed(1) : '-'
+      const avgQueue = windowEncodes > 0 ? (queueSum / windowEncodes).toFixed(0) : '-'
       console.log(
         `[Headless] ticks=${tickCount} encoded=${encodeCount} silence=${silenceCount}` +
-        ` queued=${frameQueue.length} audio=${audioSec.toFixed(1)}s wall=${elapsedSec.toFixed(1)}s`
+        ` queued=${q} audio=${audioSec.toFixed(1)}s wall=${elapsedSec.toFixed(1)}s` +
+        ` drift=${(drift * 1000).toFixed(1)}ms`
       )
+      console.log(
+        `  IFI: avg=${avgIfi}ms min=${minIfi === Infinity ? '-' : minIfi.toFixed(1)}ms max=${maxIfi === 0 ? '-' : maxIfi.toFixed(1)}ms` +
+        ` | Queue: avg=${avgQueue} min=${minQueue === Infinity ? '-' : minQueue} max=${maxQueue}` +
+        ` | pauses=${pauseCount}`
+      )
+      // Reset window stats
+      minIfi = Infinity; maxIfi = 0; ifiSum = 0
+      minQueue = Infinity; maxQueue = 0; queueSum = 0
+      windowEncodes = 0
     }
 
     // Drift-corrected next tick

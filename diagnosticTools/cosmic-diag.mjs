@@ -173,10 +173,59 @@ class Session {
     // Extra diagnostics
     this.gapCount = 0    // IFI > 100ms
     this.burstCount = 0  // IFI < 10ms
+
+    // ── Rolling window for mid-stream monitoring ──
+    this.rollingWindowStart = null   // performance.now() of window start
+    this.rollingFrameCount = 0       // frames in current window
+    this.rollingJitterSum = 0
+    this.rollingJitterCount = 0
+    this.rollingTimer = null
   }
 
   get samplesPerFrame() {
     return this.sampleRate * (this.frameDurationMs / 1000)
+  }
+
+  startRollingMonitor() {
+    this.rollingWindowStart = performance.now()
+    this.rollingFrameCount = 0
+    this.rollingJitterSum = 0
+    this.rollingJitterCount = 0
+
+    this.rollingTimer = setInterval(() => {
+      const now = performance.now()
+      const windowSec = (now - this.rollingWindowStart) / 1000
+      const totalElapsed = this.ingestStartedAt ? (now - this.ingestStartedAt) / 1000 : 0
+      const expectedAudio = (this.ingestFrameCount * this.frameDurationMs) / 1000
+      const rollingFps = windowSec > 0 ? (this.rollingFrameCount / windowSec).toFixed(1) : '0'
+      const rollingJitter = this.rollingJitterCount > 0
+        ? (this.rollingJitterSum / this.rollingJitterCount).toFixed(1)
+        : '0.0'
+      const ifiTrend = this.rollingJitterCount > 0
+        ? (expectedAudio - totalElapsed > 0.05 ? 'EARLY' : expectedAudio - totalElapsed < -0.05 ? 'LATE' : 'ON-TIME')
+        : '-'
+
+      log(
+        `[LIVE] ${totalElapsed.toFixed(1)}s elapsed | ` +
+        `frames=${this.ingestFrameCount} rolling=${rollingFps}fps | ` +
+        `jitter=${rollingJitter}ms | ` +
+        `bursts=${this.burstCount} gaps=${this.gapCount} | ` +
+        `audio=${expectedAudio.toFixed(1)}s ${ifiTrend}`
+      )
+
+      // Reset rolling window
+      this.rollingWindowStart = now
+      this.rollingFrameCount = 0
+      this.rollingJitterSum = 0
+      this.rollingJitterCount = 0
+    }, 5000)
+  }
+
+  stopRollingMonitor() {
+    if (this.rollingTimer) {
+      clearInterval(this.rollingTimer)
+      this.rollingTimer = null
+    }
   }
 
   recordFrame(frame) {
@@ -186,6 +235,7 @@ class Session {
 
     this.ingestFrameCount++
     this.ingestByteCount += frame.byteLength
+    this.rollingFrameCount++
 
     if (this.ingestMinFrameSize > frame.byteLength) this.ingestMinFrameSize = frame.byteLength
     if (this.ingestMaxFrameSize < frame.byteLength) this.ingestMaxFrameSize = frame.byteLength
@@ -197,9 +247,20 @@ class Session {
       const deviation = Math.abs(interval - this.frameDurationMs)
       this.ingestJitterSum += deviation
       this.ingestJitterCount++
+      this.rollingJitterSum += deviation
+      this.rollingJitterCount++
 
-      if (interval > 100) this.gapCount++
-      if (interval < 10) this.burstCount++
+      // ── Immediate burst/gap alerts ──
+      if (interval > 100) {
+        this.gapCount++
+        log(`  !! GAP at frame #${this.ingestFrameCount}: IFI=${interval.toFixed(0)}ms (>100ms)`)
+      }
+      if (interval < 10) {
+        this.burstCount++
+        if (this.burstCount <= 20) { // cap alert spam
+          log(`  !! BURST at frame #${this.ingestFrameCount}: IFI=${interval.toFixed(1)}ms (<10ms)`)
+        }
+      }
     }
     this.ingestLastFrameAt = now
 
@@ -414,10 +475,11 @@ wss.on('connection', (ws, req) => {
 
         ws.send(JSON.stringify({ type: 'ready' }))
         session.readyTime = performance.now()
+        session.startRollingMonitor()
 
         log(`← hello: ${session.sampleRate} Hz, ${session.channels} ch, ${session.frameDurationMs}ms frames` +
             (session.displayName ? `, name="${session.displayName}"` : ''))
-        log('→ ready')
+        log('→ ready (live monitoring active)')
         break
       }
 
@@ -474,6 +536,7 @@ udpSocket.on('message', (packet, rinfo) => {
     rtpSession.frameDurationMs = 20 // will be refined from timestamps
     rtpSession.helloReceived = true
     rtpSession.readyTime = performance.now()
+    rtpSession.startRollingMonitor()
     log(`RTP stream started from ${rinfo.address}:${rinfo.port} (PT=${payloadType})`)
   }
 
@@ -513,6 +576,8 @@ async function finalizeRtp() {
 
 // ── Finalization ────────────────────────────────────────────
 async function finalizeSession(session, source = 'ws') {
+  if (session) session.stopRollingMonitor()
+
   if (!session || session.frames.length === 0) {
     log('No frames captured — nothing to write')
     return

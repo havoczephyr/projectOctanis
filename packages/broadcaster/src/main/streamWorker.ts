@@ -1,16 +1,14 @@
 /**
  * Stream Worker — dedicated thread for Opus encoding + network send.
  *
- * Receives complete 20ms PCM frames via parentPort.postMessage from the
- * main thread, encodes with @discordjs/opus, and sends Opus frames over
- * WebSocket (Cosmic) or UDP/RTP (Direct RTP) on a drift-corrected
- * 20ms tick.
+ * Receives one 20ms PCM frame at a time from StreamManager (which owns
+ * the drift-corrected real-time tick), encodes with @discordjs/opus,
+ * and sends the Opus frame immediately over WebSocket (Cosmic) or
+ * UDP/RTP (Direct RTP).
  *
- * Architecture modeled on Cosmic's StreamProducer + DjRtpForwarder:
- *   - Simple frame queue (no SharedArrayBuffer / Atomics)
- *   - Drift-corrected tick loop for precise 20ms pacing
- *   - Pre-fill before first encode to absorb initial jitter
- *   - Silence frames when queue starves
+ * The worker is intentionally stateless with respect to timing — it
+ * encodes and sends as soon as it receives a frame.  All pacing is
+ * handled by the StreamManager's tick loop.
  */
 
 import { parentPort } from 'node:worker_threads'
@@ -33,24 +31,13 @@ const RTP_VERSION = 2
 const OPUS_PAYLOAD_TYPE = 111
 const FIXED_SSRC = 0x12345678
 
-// ── Queue constants ───────────────────────────────────────────
-const PREFILL_FRAMES = 5 // 100ms buffer before starting encode
-const MAX_QUEUE_FRAMES = 50 // 1 second max — drop oldest if exceeded
-
 // ── State ─────────────────────────────────────────────────────
 let encoder: OpusEncoder | null = null
 let ws: WebSocket | null = null
 let udpSocket: Socket | null = null
 let pingTimer: ReturnType<typeof setInterval> | null = null
-let tickTimer: ReturnType<typeof setTimeout> | null = null
 let running = false
-let tickStartTime = 0
-let frameIndex = 0
 let mode: 'cosmic' | 'direct-rtp' = 'cosmic'
-let primed = false
-
-// Pre-allocated silence frame for queue starvation
-let silenceFrame: Buffer | null = null
 
 // RTP state (direct-rtp mode)
 let rtpSeqNum = 0
@@ -60,49 +47,23 @@ const rtpHeader = Buffer.alloc(12)
 let rtpHost = '127.0.0.1'
 let rtpPort = 5002
 
-// ── PCM frame queue ───────────────────────────────────────────
-const frameQueue: Buffer[] = []
-
 // ── Instrumentation ───────────────────────────────────────────
-let tickCount = 0
 let encodeCount = 0
-let silenceCount = 0
+let startTime = 0
 
-// ── Drift-corrected tick ──────────────────────────────────────
+// ── Encode + Send (called immediately on receipt) ─────────────
 
-function tick(): void {
-  if (!running) return
+function encodeAndSend(pcm: Buffer): void {
+  if (!encoder) return
 
-  // Wait for queue to accumulate before starting encode
-  if (!primed) {
-    if (frameQueue.length >= PREFILL_FRAMES) {
-      primed = true
-      tickStartTime = performance.now()
-      frameIndex = 0
-      console.log(`[StreamWorker] Primed — ${frameQueue.length} frames queued, starting encode`)
-    } else {
-      tickTimer = setTimeout(tick, 5)
-      return
-    }
-  }
-
-  tickCount++
+  encodeCount++
 
   let opusFrame: Buffer
-  if (frameQueue.length > 0) {
-    const pcm = frameQueue.shift()!
-    encodeCount++
-    try {
-      opusFrame = encoder!.encode(pcm)
-    } catch (err) {
-      console.error('[StreamWorker] Encode error:', err)
-      scheduleNext()
-      return
-    }
-  } else {
-    // Queue starved — send silence (like Cosmic's tickSilence)
-    silenceCount++
-    opusFrame = silenceFrame ?? encoder!.encode(Buffer.alloc(PCM_FRAME_BYTES))
+  try {
+    opusFrame = encoder.encode(pcm)
+  } catch (err) {
+    console.error('[StreamWorker] Encode error:', err)
+    return
   }
 
   try {
@@ -115,41 +76,14 @@ function tick(): void {
     console.error('[StreamWorker] Send error:', err)
   }
 
-  if (tickCount % 250 === 0) {
+  // ── Real-time monitoring (every 250 encodes ≈ 5s) ──
+  if (encodeCount % 250 === 0) {
+    const wallSec = (performance.now() - startTime) / 1000
+    const audioSec = (encodeCount * FRAME_DURATION_MS) / 1000
     console.log(
-      `[StreamWorker] ticks=${tickCount} encoded=${encodeCount} silence=${silenceCount} queued=${frameQueue.length}`
+      `[StreamWorker] encoded=${encodeCount} audio=${audioSec.toFixed(1)}s wall=${wallSec.toFixed(1)}s`
     )
   }
-
-  scheduleNext()
-}
-
-function scheduleNext(): void {
-  frameIndex++
-  const nextAt = tickStartTime + frameIndex * FRAME_DURATION_MS
-  const delay = Math.max(0, nextAt - performance.now())
-  tickTimer = setTimeout(tick, delay)
-}
-
-function startTick(): void {
-  tickStartTime = performance.now()
-  frameIndex = 0
-  primed = false
-  tickCount = 0
-  encodeCount = 0
-  silenceCount = 0
-  frameQueue.length = 0
-  running = true
-  tick()
-}
-
-function stopTick(): void {
-  running = false
-  if (tickTimer) {
-    clearTimeout(tickTimer)
-    tickTimer = null
-  }
-  frameQueue.length = 0
 }
 
 // ── RTP (modeled on Cosmic's DjRtpForwarder) ─────────────────
@@ -222,7 +156,7 @@ function connectCosmic(config: {
     socket.on('close', (code, reason) => {
       console.warn(`[StreamWorker] WebSocket closed: code=${code} reason="${reason}"`)
       if (running) {
-        stopTick()
+        running = false
         stopPing()
         reportState('failed')
       }
@@ -274,10 +208,9 @@ function reportState(state: string): void {
 // ── Cleanup ───────────────────────────────────────────────────
 
 function cleanup(): void {
-  stopTick()
+  running = false
   stopPing()
   encoder = null
-  silenceFrame = null
 
   if (ws) {
     ws.removeAllListeners()
@@ -298,16 +231,30 @@ function cleanup(): void {
 parentPort?.on(
   'message',
   async (msg: { type: string; config?: Record<string, unknown>; buffer?: ArrayBuffer }) => {
+    // ── PCM frame: encode and send immediately ──
     if (msg.type === 'pcm' && msg.buffer && running) {
-      // Receive a complete 20ms PCM frame, push to queue
       const frame = Buffer.from(msg.buffer)
-      if (frameQueue.length < MAX_QUEUE_FRAMES) {
-        frameQueue.push(frame)
-      }
-      // else: drop — queue overflow means renderer is ahead of encoder
+      encodeAndSend(frame)
       return
     }
 
+    // ── EOF: stream complete, graceful shutdown ──
+    if (msg.type === 'eof') {
+      const audioSec = (encodeCount * FRAME_DURATION_MS) / 1000
+      const wallSec = (performance.now() - startTime) / 1000
+      console.log(
+        `[StreamWorker] EOF — ${encodeCount} frames encoded, ` +
+          `audio=${audioSec.toFixed(1)}s wall=${wallSec.toFixed(1)}s`
+      )
+      // Brief delay to let the last frame flush over the network
+      setTimeout(() => {
+        cleanup()
+        reportState('disconnected')
+      }, 200)
+      return
+    }
+
+    // ── Start: initialize encoder + connect ──
     if (msg.type === 'start' && msg.config) {
       const config = msg.config
       mode = config.mode as 'cosmic' | 'direct-rtp'
@@ -321,8 +268,8 @@ parentPort?.on(
         encoder.setBitrate(bitrate)
         console.log(`[StreamWorker] Opus encoder: ${sampleRate}Hz, ${channels}ch, ${bitrate}bps`)
 
-        // Pre-encode a silence frame for queue starvation
-        silenceFrame = encoder.encode(Buffer.alloc(PCM_FRAME_BYTES))
+        encodeCount = 0
+        startTime = performance.now()
 
         if (mode === 'cosmic') {
           await connectCosmic({
@@ -331,17 +278,17 @@ parentPort?.on(
             displayName: config.displayName as string | undefined,
           })
           startPing()
-          startTick()
+          running = true
           reportState('connected')
           parentPort?.postMessage({ type: 'started' })
-          console.log('[StreamWorker] Cosmic streaming started')
+          console.log('[StreamWorker] Cosmic streaming started — awaiting frames')
         } else if (mode === 'direct-rtp') {
           rtpHost = (config.janusHost as string) ?? '127.0.0.1'
           rtpPort = (config.janusPort as number) ?? 5002
           initRtp()
           udpSocket = createSocket('udp4')
           udpSocket.on('error', () => {}) // suppress non-fatal UDP errors
-          startTick()
+          running = true
           reportState('connected')
           parentPort?.postMessage({ type: 'started' })
           console.log(`[StreamWorker] Direct RTP streaming to ${rtpHost}:${rtpPort}`)
