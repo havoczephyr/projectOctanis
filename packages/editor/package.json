@@ -1,6 +1,13 @@
 {
   "name": "@octanis/editor",
   "version": "0.1.0",
+  "description": "Octanis Editor — timeline-based audio project editor",
+  "author": "havoczephyr <havoczephyr@users.noreply.github.com>",
+  "homepage": "https://github.com/havoczephyr/projectOctanis",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/havoczephyr/projectOctanis.git"
+  },
   "private": true,
   "main": "./out/main/index.js",
   "scripts": {
